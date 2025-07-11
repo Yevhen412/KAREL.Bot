@@ -21,5 +21,5 @@ class BybitWebSocket:
         await self._connect()
 
         async for message in self.ws:
-            data = json.loads(message)
-            yield data
+            yield json.loads(message)
+            
