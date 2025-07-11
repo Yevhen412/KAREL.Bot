@@ -1,11 +1,10 @@
+import asyncio
 from bybit_websocket import BybitWebSocket
-from simulator import TradeSimulator
+
+async def main():
+    ws = BybitWebSocket()
+    async for msg in ws.listen():
+        print(msg)
 
 if __name__ == "__main__":
-    ws = BybitWebSocket()
-    simulator = TradeSimulator()
-
-    for event in ws.listen():
-        signal = simulator.process(event)
-        if signal:
-            simulator.simulate_trade(signal)
+    asyncio.run(main())
