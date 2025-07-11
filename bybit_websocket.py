@@ -2,7 +2,6 @@ import asyncio
 import websockets
 import json
 from collections import defaultdict
-import time
 
 class BybitWebSocket:
     def __init__(self):
@@ -11,16 +10,16 @@ class BybitWebSocket:
         self.prices = defaultdict(list)
 
     async def _connect(self):
-        async with websockets.connect(self.url) as ws:
-            subscribe_msg = {
-                "op": "subscribe",
-                "args": [f"publicTrade.{symbol}" for symbol in self.symbols]
-            }
-            await ws.send(json.dumps(subscribe_msg))
+        self.ws = await websockets.connect(self.url)
+        subscribe_msg = {
+            "op": "subscribe",
+            "args": [f"publicTrade.{symbol}" for symbol in self.symbols]
+        }
+        await self.ws.send(json.dumps(subscribe_msg))
 
-            while True:
-                msg = await ws.recv()
-                yield json.loads(msg)
+    async def listen(self):
+        await self._connect()
 
-    def listen(self):
-        return asyncio.run(self._connect())
+        async for message in self.ws:
+            data = json.loads(message)
+            yield data
