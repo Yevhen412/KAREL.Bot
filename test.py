@@ -1,5 +1,4 @@
 import os
-import asyncio
 import aiohttp
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -15,5 +14,3 @@ async def test_send():
         async with session.post(url, data=data) as resp:
             print("Status:", resp.status)
             print("Response:", await resp.text())
-
-asyncio.run(test_send())
