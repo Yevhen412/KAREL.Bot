@@ -1,4 +1,7 @@
+print(">>> test.py started")
+
 import os
+import asyncio
 import aiohttp
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
