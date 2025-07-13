@@ -3,9 +3,7 @@ from bybit_websocket import BybitWebSocket
 from trade_simulator import TradeSimulator
 from telegram_bot import notify_telegram
 from test import test_send
-import asyncio
 
-asyncio.run(test_send())
 
 async def send_hourly_report(simulator):
     while True:
@@ -14,7 +12,11 @@ async def send_hourly_report(simulator):
         if report:
             await notify_telegram(report)
 
+
 async def main():
+    # ⬇️ Отправка тестового сообщения
+    await test_send()
+
     ws = BybitWebSocket()
     simulator = TradeSimulator()
 
@@ -26,6 +28,7 @@ async def main():
             result_msg = simulator.simulate_trade(signal)
             if result_msg:
                 await notify_telegram(result_msg)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
