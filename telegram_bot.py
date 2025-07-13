@@ -1,6 +1,10 @@
 import os
 import aiohttp
 
+if os.getenv("BOT_ENABLED", "true") != "true":
+    print("Bot is paused via BOT_ENABLED")
+    exit()
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("MY_CHAT_ID")
 
