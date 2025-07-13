@@ -2,7 +2,7 @@ import os
 import aiohttp
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+CHAT_ID = os.getenv("MY_CHAT_ID")
 
 async def notify_telegram(message):
     if not BOT_TOKEN or not CHAT_ID:
