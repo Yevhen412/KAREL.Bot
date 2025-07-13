@@ -1,13 +1,22 @@
 import os
-import requests
+import aiohttp
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def notify_telegram(message):
+async def notify_telegram(message: str):
     if not BOT_TOKEN or not CHAT_ID:
         print("Telegram not configured")
         return
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": message}
-    requests.post(url, data=data)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    print(f"Failed to send message: {resp.status} — {text}")
+    except Exception as e:
+        print(f"Telegram error: {e}")
