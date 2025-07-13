@@ -20,5 +20,8 @@ async def notify_telegram(message: str):
                 if resp.status != 200:
                     text = await resp.text()
                     print(f"Failed to send message: {resp.status} — {text}")
+                else:
+        print("Telegram message sent successfully")
+        
     except Exception as e:
         print(f"Telegram error: {e}")
