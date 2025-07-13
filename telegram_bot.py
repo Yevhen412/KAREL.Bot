@@ -9,8 +9,8 @@ async def notify_telegram(message: str):
         print("Telegram not configured")
         return
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"CHAT_ID": CHAT_ID, "text": message}
 
     try:
         async with aiohttp.ClientSession() as session:
