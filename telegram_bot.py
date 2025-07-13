@@ -17,11 +17,12 @@ async def notify_telegram(message: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data) as resp:
-                if resp.status != 200:
+                if resp.status == 200:
+                    text = await resp.text()
+                    print("Telegram message sent successfully")
+                else:
                     text = await resp.text()
                     print(f"Failed to send message: {resp.status} — {text}")
-                else:
-        print("Telegram message sent successfully")
         
     except Exception as e:
         print(f"Telegram error: {e}")
