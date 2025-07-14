@@ -9,6 +9,7 @@ class TradeSimulator:
         return self.generate_signal(event)
 
     def generate_signal(self, event):
+        print("[DEBUG] Event received:", event)
     data = event.get("data")
     if not data or not isinstance(data, list):
         print("Некорректный формат данных:", data)
