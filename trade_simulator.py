@@ -1,21 +1,19 @@
+
+import json
+
 class TradeSimulator:
     def __init__(self):
-        self.active_trade = False
-
-    def generate_signal(self, event):
-        try:
-            data = event.get("data", {})
-            if "p" not in data:
-                print("⛔ Нет ключа 'p' в событии:", event)
-                return None
-
-            entry_price = float(data["p"])
-            # Пример логики генерации сигнала
-            signal = {"entry_price": entry_price}
-            return signal
-        except Exception as e:
-            print(f"❌ Ошибка в generate_signal: {e}")
-            return None
+        self.in_trade = False
 
     def process(self, event):
         return self.generate_signal(event)
+
+    def generate_signal(self, event):
+        data = event.get("data")
+        if isinstance(data, list) and len(data) > 0 and "p" in data[0]:
+            entry_price = float(data[0]["p"])
+            print(f"[✅] Entry price: {entry_price}")
+            return {"entry_price": entry_price}
+        else:
+            print(f"❌ Нет ключа 'p' в событии: {json.dumps(event)}")
+            return None
