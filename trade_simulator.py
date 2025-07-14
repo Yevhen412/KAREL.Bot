@@ -9,11 +9,13 @@ class TradeSimulator:
         return self.generate_signal(event)
 
     def generate_signal(self, event):
-        data = event.get("data")
-        if isinstance(data, list) and len(data) > 0 and "p" in data[0]:
-            entry_price = float(data[0]["p"])
-            print(f"[✅] Entry price: {entry_price}")
-            return {"entry_price": entry_price}
-        else:
-            print(f"❌ Нет ключа 'p' в событии: {json.dumps(event)}")
-            return None
+    data = event.get("data")
+    if not data or not isinstance(data, list):
+        print("Некорректный формат данных:", data)
+        return None
+
+    trade = data[0]
+    price = trade.get("p")
+    if price is None:
+        print("⛔ Нет цены в событии:", trade)
+        return None
