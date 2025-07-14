@@ -1,4 +1,4 @@
-111111class TradeSimulator:
+class TradeSimulator:
     def __init__(self):
         self.in_trade = False
 
