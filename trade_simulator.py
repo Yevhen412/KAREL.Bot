@@ -2,7 +2,7 @@ import json
 
 class TradeSimulator:
     def __init__(self):
-        self.in_trade = False
+        self.in_trade = False  # Флаг: находимся ли в позиции
 
     def process(self, event):
         return self.generate_signal(event)
@@ -43,3 +43,16 @@ class TradeSimulator:
         except Exception as e:
             print(f"🔥 Ошибка в generate_signal: {e}")
             return None
+
+    def simulate_trade(self, signal):
+        """Метод заглушка — можно расширить под реальную симуляцию."""
+        if not signal:
+            return "❌ Сигнал не получен."
+
+        entry_price = signal.get("entry_price")
+        if entry_price is None:
+            return "❌ Нет цены входа."
+
+        # Здесь можно расширить: расчет прибыли/убытка и т.д.
+        print(f"[SIMULATION] Сделка открыта по цене: {entry_price}")
+        return f"✅ Сделка симулирована по цене: {entry_price}"
