@@ -1,39 +1,21 @@
-import time
-
 class TradeSimulator:
     def __init__(self):
-        self.in_position = False  # === Новый флаг ===
-        self.last_report_time = time.time()
-
-    def process(self, event):
-        # Логика генерации сигнала
-        return self.generate_signal(event)
+        self.active_trade = False
 
     def generate_signal(self, event):
-        # Заглушка — здесь будет логика анализа
-        return {
-            "side": "long",  # или "short"
-            "symbol": event.get("symbol", "UNKNOWN"),
-            "entry_price": float(event["data"]["p"]),
-            "timestamp": time.time()
-        }
+        try:
+            data = event.get("data", {})
+            if "p" not in data:
+                print("⛔ Нет ключа 'p' в событии:", event)
+                return None
 
-    def simulate_trade(self, signal):
-        if self.in_position:
-            return None  # === Запрет на вторую сделку ===
+            entry_price = float(data["p"])
+            # Пример логики генерации сигнала
+            signal = {"entry_price": entry_price}
+            return signal
+        except Exception as e:
+            print(f"❌ Ошибка в generate_signal: {e}")
+            return None
 
-        self.in_position = True
-        symbol = signal["symbol"]
-        side = signal["side"]
-        entry = signal["entry_price"]
-
-        # Примитивная симуляция тейка и стопа
-        profit = round(0.58 if side == "long" else -0.29, 2)
-
-        self.in_position = False
-
-        # === Тикер в сообщении ===
-        return f"🔁 Сделка {symbol} [{side.upper()}] → PnL: {profit}$"
-
-    def generate_hourly_report(self):
-        return "🕒 Почасовой отчёт пока не реализован"
+    def process(self, event):
+        return self.generate_signal(event)
