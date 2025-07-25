@@ -1,27 +1,46 @@
-import asyncio
-from bybit_websocket import BybitWebSocket
-from trade_simulator import TradeSimulator
-from telegram_bot import notify_telegram
-from test import test_send
+# data_loader.py
+import pandas as pd
+import numpy as np
+from pybit.unified_trading import HTTP
+from datetime import datetime, timedelta
+import time
 
-async def send_hourly_report(simulator):
-    while True:
-        await asyncio.sleep(3600)
-        report = simulator.generate_hourly_report()
-        if report:
-            await notify_telegram(report)
+# === Настройка API (можно будет вынести в переменные окружения) ===
+api_key = ""
+api_secret = ""
+session = HTTP(api_key=api_key, api_secret=api_secret, testnet=False)
 
-async def main():
-    await test_send()
-    ws = BybitWebSocket()
-    simulator = TradeSimulator()
-    asyncio.create_task(send_hourly_report(simulator))
-    async for event in ws.listen():
-        signal = simulator.process(event)
-        if signal:
-            result_msg = simulator.simulate_trade(signal)
-            if result_msg:
-                await notify_telegram(result_msg)
+# === Функция загрузки данных по символам ===
+def load_data(symbols, interval="1", limit=360):
+    end_time = int(datetime.now().timestamp() * 1000)
+    start_time = end_time - limit * 60 * 1000  # в миллисекундах
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    all_data = {}
+    for symbol in symbols:
+        try:
+            print(f"Загружаем {symbol}...")
+            res = session.get_kline(
+                category="spot",
+                symbol=symbol,
+                interval=interval,
+                start=start_time,
+                end=end_time
+            )
+            data = res['result']['list']
+            df = pd.DataFrame(data, columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "turnover"
+            ])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
+            df["close"] = df["close"].astype(float)
+            df = df[["timestamp", "close"]].set_index("timestamp")
+            all_data[symbol] = df
+            time.sleep(0.25)
+        except Exception as e:
+            print(f"Ошибка загрузки {symbol}: {e}")
+
+    # Объединение в один DataFrame
+    merged = pd.concat(all_data.values(), axis=1)
+    merged.columns = symbols
+    merged.dropna(inplace=True)
+    return merged
+    
