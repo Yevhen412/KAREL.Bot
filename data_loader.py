@@ -1,16 +1,14 @@
-# data_loader.py
 import pandas as pd
 import numpy as np
 from pybit.unified_trading import HTTP
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 
-# === Настройка API (можно будет вынести в переменные окружения) ===
+# === Настройка API (временно пустые ключи — добавь свои) ===
 api_key = ""
 api_secret = ""
 session = HTTP(api_key=api_key, api_secret=api_secret, testnet=False)
 
-# === Функция загрузки данных по символам ===
 def load_data(symbols, interval="1", limit=360):
     end_time = int(datetime.now().timestamp() * 1000)
     start_time = end_time - limit * 60 * 1000  # в миллисекундах
@@ -38,9 +36,7 @@ def load_data(symbols, interval="1", limit=360):
         except Exception as e:
             print(f"Ошибка загрузки {symbol}: {e}")
 
-    # Объединение в один DataFrame
     merged = pd.concat(all_data.values(), axis=1)
     merged.columns = symbols
     merged.dropna(inplace=True)
     return merged
-    
