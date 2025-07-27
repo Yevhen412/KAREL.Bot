@@ -13,7 +13,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Сообщение каждые 10 минут, если нет импульсов
-ALIVE_NOTIFICATION_INTERVAL_MINUTES = 10
+ALIVE_NOTIFICATION_INTERVAL_MINUTES = 30
 
 # Символ для отслеживания
 SYMBOL = "BTCUSDT"
