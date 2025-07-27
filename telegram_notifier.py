@@ -12,5 +12,5 @@ async def send_message(text):
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, data=payload) as response:
+        async with session.post(url, json=payload) as response:
             return await response.text()
