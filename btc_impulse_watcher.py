@@ -2,76 +2,48 @@ import asyncio
 import websockets
 import json
 import time
-from datetime import datetime
-from config import (
-    SYMBOL,
-    IMPULSE_THRESHOLD_PERCENT,
-    IMPULSE_WINDOW_SECONDS,
-    ALIVE_NOTIFICATION_INTERVAL_MINUTES,
-)
 from telegram_notifier import send_message
 
-# Храним последние цены и время последнего alive-сообщения
-price_history = []
-last_alive_time = 0
+impulse_detected = False
+last_impulse_time = 0
 
-async def handle_socket():
-    global last_alive_time
+async def check_keepalive():
+    while True:
+        await asyncio.sleep(1800)  # 30 минут
+        if not impulse_detected:
+            await send_message("⏳ Бот активен. Ждём импульс по BTCUSDT...")
+
+async def listen_to_websocket():
+    global impulse_detected, last_impulse_time
+
     url = "wss://stream.bybit.com/v5/public/spot"
-
-    await send_message("✅ Бот запущен и ждёт импульс...")
-
     async with websockets.connect(url) as ws:
+        await send_message("✅ Бот запущен и ждёт импульс...")
         await ws.send(json.dumps({
             "op": "subscribe",
-            "args": [f"publicTrade.{SYMBOL}"]
+            "args": ["publicTrade.BTCUSDT"]
         }))
-        await send_message(f"✅ Подключен к WebSocket по {SYMBOL}")
+        await send_message("✅ Подключен к WebSocket по BTCUSDT")
 
-        while True:
-            try:
-                message = await asyncio.wait_for(ws.recv(), timeout=30)
-                data = json.loads(message)
-
-                if "data" in data:
-                    for trade in data["data"]:
-                        price = float(trade["p"])
-                        timestamp = time.time()
-                        price_history.append((timestamp, price))
-
-                        # Удаляем устаревшие записи
-                        price_history[:] = [
-                            (t, p) for t, p in price_history
-                            if timestamp - t <= IMPULSE_WINDOW_SECONDS
-                        ]
-
-                        prices = [p for _, p in price_history]
-                        if prices:
-                            min_price = min(prices)
-                            max_price = max(prices)
-                            change_percent = (max_price - min_price) / min_price * 100
-
-                            if change_percent >= IMPULSE_THRESHOLD_PERCENT:
-                                direction = "вверх" if prices[-1] > prices[0] else "вниз"
-                                await send_message(f"🚀 Импульс {direction}! Цена изменилась на {change_percent:.2f}% за последние {IMPULSE_WINDOW_SECONDS} сек.")
-
-                # Alive-сообщение раз в N минут
-                now = time.time()
-                if now - last_alive_time > ALIVE_NOTIFICATION_INTERVAL_MINUTES * 60:
-                    await send_message(f"⏳ Бот активен. Ждём импульс по {SYMBOL}...")
-                    last_alive_time = now
-
-            except asyncio.TimeoutError:
-                await send_message("⚠️ Таймаут WebSocket. Переподключение...")
-                break  # выйдем из цикла, пересоздастся соединение
+        async for message in ws:
+            data = json.loads(message)
+            if 'data' in data:
+                trades = data['data']
+                prices = [float(t['p']) for t in trades]
+                if len(prices) >= 2:
+                    percent_change = abs(prices[-1] - prices[0]) / prices[0] * 100
+                    if percent_change >= 0.3:
+                        now = time.time()
+                        if now - last_impulse_time > 10:
+                            last_impulse_time = now
+                            impulse_detected = True
+                            await send_message(f"🚀 Обнаружен импульс по BTCUSDT: {percent_change:.2f}%")
 
 async def main():
-    while True:
-        try:
-            await handle_socket()
-        except Exception as e:
-            await send_message(f"❌ Ошибка в боте: {e}")
-            await asyncio.sleep(5)
+    await asyncio.gather(
+        listen_to_websocket(),
+        check_keepalive()
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
