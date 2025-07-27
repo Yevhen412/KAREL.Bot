@@ -9,7 +9,7 @@ from config import (
     IMPULSE_WINDOW_SECONDS,
     ALIVE_NOTIFICATION_INTERVAL_MINUTES
 )
-from notifier import send_telegram_message
+from telegram_notifier import send_telegram_message
 send_telegram_message("✅ Бот запущен и ждёт импульс")
 
 # Храним последние цены и время последнего alive-сообщения
