@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import (
     SYMBOL,
     IMPULSE_THRESHOLD_PERCENT,
@@ -11,32 +11,65 @@ from config import (
 )
 from telegram_notifier import send_message
 
-send_message("✅ Бот запущен и ждёт импульс...")
+# Отправляем стартовое сообщение
+asyncio.run(send_message("✅ Бот запущен и ждёт импульс..."))
 
+# Храним последние цены и время последнего alive-сообщения
 price_history = []
-last_alive_time = 0
+last_alive_time = datetime.utcnow()
 
 async def handle_socket():
     global last_alive_time
     url = "wss://stream.bybit.com/v5/public/spot"
 
-    while True:
-        try:
-            async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                await ws.send(json.dumps({
-                    "op": "subscribe",
-                    "args": [f"publicTrade.{SYMBOL}"]
-                }))
-                send_message(f"✅ Подключен к WebSocket по {SYMBOL}")
+    async with websockets.connect(url) as ws:
+        await send_message(f"✅ Подключен к WebSocket по {SYMBOL}")
 
-                while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
-                    # тут твоя логика анализа
+        # Подписка на сделки по BTCUSDT
+        subscribe_msg = {
+            "op": "subscribe",
+            "args": [f"publicTrade.{SYMBOL}"]
+        }
+        await ws.send(json.dumps(subscribe_msg))
 
-        except Exception as e:
-            send_message(f"❌ Ошибка WebSocket: {e}\nПереподключение через 5 сек...")
-            await asyncio.sleep(5)
+        while True:
+            try:
+                message = await asyncio.wait_for(ws.recv(), timeout=30)
+                data = json.loads(message)
+
+                if "data" in data and isinstance(data["data"], list):
+                    for trade in data["data"]:
+                        price = float(trade["p"])
+                        timestamp = datetime.utcnow()
+                        price_history.append((timestamp, price))
+
+                # Удаляем старые записи
+                cutoff = datetime.utcnow() - timedelta(seconds=IMPULSE_WINDOW_SECONDS)
+                price_history[:] = [(ts, p) for ts, p in price_history if ts >= cutoff]
+
+                # Анализ на импульс
+                if len(price_history) >= 2:
+                    oldest_price = price_history[0][1]
+                    newest_price = price_history[-1][1]
+                    change_percent = (newest_price - oldest_price) / oldest_price * 100
+
+                    if abs(change_percent) >= IMPULSE_THRESHOLD_PERCENT:
+                        direction = "вверх" if change_percent > 0 else "вниз"
+                        await send_message(f"⚡ Импульс по BTC: {direction} {change_percent:.2f}% за {IMPULSE_WINDOW_SECONDS} сек")
+                        last_alive_time = datetime.utcnow()
+
+                # Alive сообщение раз в 30 минут (или заданное число минут)
+                now = datetime.utcnow()
+                if now - last_alive_time >= timedelta(minutes=ALIVE_NOTIFICATION_INTERVAL_MINUTES):
+                    await send_message("✅ Бот жив, но импульсов пока нет.")
+                    last_alive_time = now
+
+            except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+                await send_message("⚠️ Потеря соединения с WebSocket. Переподключение...")
+                break
+            except Exception as e:
+                await send_message(f"❌ Ошибка: {str(e)}")
+                break
 
 if __name__ == "__main__":
     asyncio.run(handle_socket())
