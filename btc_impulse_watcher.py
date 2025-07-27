@@ -20,7 +20,7 @@ async def handle_socket():
     global last_alive_time
     url = "wss://stream.bybit.com/v5/public/spot"
 
-    async with websockets.connect(url) as ws:
+    async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
         # Подписка на сделки по BTC
         payload = {
             "op": "subscribe",
