@@ -1,1 +1,1 @@
-worker: python btc_event_tracker.py
+worker: python btc_impulse_watcher.py
