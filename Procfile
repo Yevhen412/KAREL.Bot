@@ -1,1 +1,1 @@
-worker: pip install aiohttp && python btc_impulse_watcher.py
+worker: python btc_event_tracker.py
