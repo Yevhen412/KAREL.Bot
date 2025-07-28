@@ -34,7 +34,7 @@ def send_message(text):
         print(f"[Telegram] Исключение: {e}")
 
 # --- Получение свечей ---
-def get_klines(symbol: str, interval: str, limit: int = LOOKBACK):
+def get_klines(symbol: str, interval: str, limit: int = 100):
     url = f"{BYBIT_BASE_URL}/v5/market/kline"
     params = {
         "category": "spot",
@@ -42,19 +42,27 @@ def get_klines(symbol: str, interval: str, limit: int = LOOKBACK):
         "interval": interval,
         "limit": limit,
     }
-    response = requests.get(url, params=params)
-    data = response.json()
 
-    if data["retCode"] != 0 or "result" not in data:
-        print(f"[!] Ошибка получения свечей для {symbol}")
+    try:
+        response = requests.get(url, params=params)
+        data = response.json()
+
+        if data["retCode"] != 0 or "result" not in data or "list" not in data["result"]:
+            print(f"[!] Ошибка получения свечей для {symbol}. Ответ: {data}")
+            return None
+
+        df = pd.DataFrame(data["result"]["list"], columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "turnover"
+        ])
+        df = df[["timestamp", "open", "high", "low", "close"]]
+        df = df.astype(float)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
+        return df
+
+    except Exception as e:
+        print(f"[!] Исключение при получении свечей для {symbol}: {e}")
         return None
-
-    df = pd.DataFrame(data["result"]["list"], columns=["timestamp", "open", "high", "low", "close", "volume", "_"])
-    df = df[["timestamp", "open", "high", "low", "close", "volume"]]
-    df = df.astype(float)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
-    df.set_index("timestamp", inplace=True)
-    return df
 
 # --- Расчёт ATR ---
 def calculate_atr(df: pd.DataFrame, period: int = ATR_PERIOD):
