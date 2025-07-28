@@ -1,65 +1,77 @@
-import os
-import asyncio
+import requests
 import pandas as pd
-import datetime
-from bybit_api import fetch_ohlcv
-from correlation import compute_correlation
-from notifier import send_message
+import time
+from datetime import datetime, timedelta
+import pytz
+import telegram
 
-PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "AVAXUSDT", "XRPUSDT", "ADAUSDT"]
-TIMEFRAME = "5"
-DAYS = 1
-CORR_THRESHOLD = 0.85
-CHECK_INTERVAL = 60  # сек между проверками (по умолчанию каждую минуту)
-ALERT_INTERVAL = 600  # если нет импульса, напоминание "бот жив" каждые 10 минут
+# === НАСТРОЙКИ ===
+SYMBOL = "BTCUSDT"
+ALTCOINS = ["ETHUSDT", "SOLUSDT", "AVAXUSDT", "XRPUSDT"]
+INTERVAL = "5"
+LIMIT = 100
+ATR_PERIOD = 14
+ATR_MULTIPLIER = 0.5
+TELEGRAM_TOKEN = "your_telegram_token"
+TELEGRAM_CHAT_ID = "your_chat_id"
 
-async def main_loop():
-    last_alert_time = datetime.datetime.utcnow() - datetime.timedelta(seconds=ALERT_INTERVAL)
+# === ФУНКЦИИ ===
 
-    while True:
-        now_nl = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-        if now_nl.hour >= 0 and now_nl.hour < 7:
-            await send_message("⏸ Бот остановлен: ночь (00:00–07:00 NL времени).")
-            while True:
-                await asyncio.sleep(60)
-                now_nl = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-                if now_nl.hour == 7 and now_nl.minute == 0:
-                    await send_message("▶️ Бот возобновлён в 07:00 (NL время).")
-                    break
+def fetch_ohlcv(symbol):
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval={INTERVAL}&limit={LIMIT}"
+    r = requests.get(url)
+    data = r.json()["result"]["list"]
+    df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"])
+    df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    return df
 
-        try:
-            dfs = {}
-            for pair in PAIRS:
-                df = await fetch_ohlcv(pair, TIMEFRAME, DAYS)
-                dfs[pair] = df
+def calculate_atr(df):
+    df["H-L"] = df["high"] - df["low"]
+    df["H-PC"] = abs(df["high"] - df["close"].shift(1))
+    df["L-PC"] = abs(df["low"] - df["close"].shift(1))
+    df["TR"] = df[["H-L", "H-PC", "L-PC"]].max(axis=1)
+    atr = df["TR"].rolling(ATR_PERIOD).mean().iloc[-1]
+    return atr
 
-            btc_df = dfs["BTCUSDT"]
-            btc_range = btc_df["high"].iloc[-1] - btc_df["low"].iloc[-1]
-            atr = btc_df["high"].sub(btc_df["low"]).rolling(window=14).mean().iloc[-1]
+def get_utc_plus1_now():
+    return datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(pytz.timezone("Europe/Amsterdam"))
 
-            if btc_range >= 0.5 * atr:
-                report = f"⚡️ BTC движение: {btc_range:.2f} (ATR: {atr:.2f})\n"
-                for pair, df in dfs.items():
-                    if pair == "BTCUSDT":
-                        continue
-                    corr = compute_correlation(btc_df, df)
-                    if corr >= CORR_THRESHOLD:
-                        delta = df["high"].iloc[-1] - df["low"].iloc[-1]
-                        pct = 100 * delta / df["low"].iloc[-1]
-                        report += f"🔗 {pair}: корреляция {corr:.2f}, Δ {pct:.2f}%\n"
-                await send_message(report)
-                last_alert_time = datetime.datetime.utcnow()
+def send_telegram_message(text):
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text, parse_mode="HTML")
 
-            # напоминание, что бот жив (если нет импульса)
-            if (datetime.datetime.utcnow() - last_alert_time).total_seconds() >= ALERT_INTERVAL:
-                await send_message("🤖 Бот активен, импульсов пока нет.")
-                last_alert_time = datetime.datetime.utcnow()
+def run_tracker():
+    now = get_utc_plus1_now()
+    if now.hour < 7 or now.hour >= 24:
+        send_telegram_message(f"⏸ Скрипт приостановлен до 07:00 по NL (сейчас {now.strftime('%H:%M')})")
+        return
 
-        except Exception as e:
-            await send_message(f"❗️ Ошибка: {e}")
+    btc_df = fetch_ohlcv(SYMBOL)
+    atr = calculate_atr(btc_df)
+    last_candle = btc_df.iloc[-1]
+    recent_change = last_candle["high"] - last_candle["low"]
 
-        await asyncio.sleep(CHECK_INTERVAL)
+    if recent_change >= atr * ATR_MULTIPLIER:
+        pct_change = (recent_change / last_candle["close"]) * 100
+        message = f"<b>🚨 BTC Движение за {INTERVAL}m:</b>\n"
+        message += f"Δ = {recent_change:.2f} USDT ({pct_change:.2f}%)\n"
+        message += f"ATR = {atr:.2f}\n"
 
+        # Корреляции
+        for alt in ALTCOINS:
+            alt_df = fetch_ohlcv(alt)
+            corr = btc_df["close"].corr(alt_df["close"])
+            message += f"🔗 {alt}: корреляция = {corr:.2f}\n"
+
+        send_telegram_message(message)
+
+# === ЦИКЛ ===
 
 if __name__ == "__main__":
-    asyncio.run(main_loop())
+    while True:
+        try:
+            run_tracker()
+        except Exception as e:
+            send_telegram_message(f"⚠️ Ошибка: {e}")
+        time.sleep(300)
