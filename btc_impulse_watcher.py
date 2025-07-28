@@ -12,8 +12,9 @@ INTERVAL = "5"
 LIMIT = 100
 ATR_PERIOD = 14
 ATR_MULTIPLIER = 0.5
-TELEGRAM_TOKEN = "your_telegram_token"
-TELEGRAM_CHAT_ID = "your_chat_id"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 
 # === ФУНКЦИИ ===
 
