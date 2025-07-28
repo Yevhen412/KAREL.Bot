@@ -15,7 +15,7 @@ ATR_MULTIPLIER = 0.5
 BYBIT_BASE_URL = "https://api.bybit.com"
 
 # --- Переменные окружения (из Railway или .env) ---
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # --- Telegram Notifier ---
