@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 # --- Настройки ---
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "AVAXUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "AVAXUSDT", "XRPUSDT"]
 INTERVAL = "5m"
 LOOKBACK = 50
 ATR_PERIOD = 14
