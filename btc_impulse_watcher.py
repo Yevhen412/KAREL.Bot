@@ -92,8 +92,7 @@ def run_tracker():
             continue
 
         atr = calculate_atr(btc_df)
-        recent_change = abs(btc_df["close"].iloc[-1] - btc_df["close"].iloc[-2])
-
+        recent_change = btc_df["high"].iloc[-1] - btc_df["low"].iloc[-1]
         if recent_change >= atr * ATR_MULTIPLIER:
             pct_change = (recent_change / btc_df["close"].iloc[-2]) * 100
             message = f"<b>🚨 BTC Движение за 5m:</b>\n"
