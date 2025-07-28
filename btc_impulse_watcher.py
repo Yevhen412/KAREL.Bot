@@ -54,7 +54,7 @@ def run_tracker():
     recent_change = last_candle["high"] - last_candle["low"]
 
     if recent_change >= atr * ATR_MULTIPLIER:
-        pct_change = (recent_change / last_candle["close"]) * 100
+        pct_change = (recent_change / last_candle["low"]) * 100
         message = f"<b>🚨 BTC Движение за {INTERVAL}m:</b>\n"
         message += f"Δ = {recent_change:.2f} USDT ({pct_change:.2f}%)\n"
         message += f"ATR = {atr:.2f}\n"
