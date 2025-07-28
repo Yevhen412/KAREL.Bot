@@ -7,7 +7,7 @@ from datetime import datetime
 
 # --- Настройки ---
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "AVAXUSDT", "XRPUSDT"]
-INTERVAL = "5m"
+INTERVAL = "5"
 LOOKBACK = 50
 ATR_PERIOD = 14
 CORR_THRESHOLD = 0.85
