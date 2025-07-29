@@ -1,1 +1,1 @@
-worker: python ATR.py
+worker: python Run.py
