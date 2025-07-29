@@ -1,9 +1,8 @@
 import aiohttp
-import asyncio
+import pandas as pd
 
-BYBIT_URL = "https://api.bybit.com/v5/market/kline"
-
-async def fetch_last_candle():
+async def analyze_candle(atr_value):
+    url = "https://api.bybit.com/v5/market/kline"
     params = {
         "category": "linear",
         "symbol": "BTCUSDT",
@@ -12,30 +11,29 @@ async def fetch_last_candle():
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(BYBIT_URL, params=params) as resp:
-            data = await resp.json()
-            if data["retCode"] != 0:
-                raise Exception("Failed to fetch candle data")
-            return data["result"]["list"][0]
+        async with session.get(url, params=params) as response:
+            data = await response.json()
+            kline = data['result']['list'][0]
 
-async def analyze_candle():
-    candle = await fetch_last_candle()
-    
-    open_price = float(candle[1])
-    high = float(candle[2])
-    low = float(candle[3])
-    close = float(candle[4])
+            open_price = float(kline[1])
+            high_price = float(kline[2])
+            low_price = float(kline[3])
+            close_price = float(kline[4])
 
-    delta = high - low
-    direction = "📈 Бычья" if close >= open_price else "📉 Медвежья"
-    pct_change = ((close - open_price) / open_price) * 100
+            delta = abs(high_price - low_price)
+            pct_change = ((close_price - open_price) / open_price) * 100
+            direction = "up" if close_price > open_price else "down"
 
-    return {
-        "open": open_price,
-        "high": high,
-        "low": low,
-        "close": close,
-        "delta": delta,
-        "direction": direction,
-        "pct_change": pct_change
-    }
+            # Условие: если свеча прошла ≥ 50% ATR
+            if delta >= 0.5 * atr_value:
+                return True, {
+                    "open": open_price,
+                    "high": high_price,
+                    "low": low_price,
+                    "close": close_price,
+                    "delta": delta,
+                    "pct_change": pct_change,
+                    "direction": direction
+                }
+            else:
+                return False, None
