@@ -1,48 +1,27 @@
 import asyncio
-from ATR import calculate_atr
+from ATR import fetch_btc_candles, calculate_atr
 from Step import analyze_candle
 from Correlation import calculate_correlation
-from AltFetcher import fetch_alt_candles
-
-import datetime
 
 async def main():
-    print("\n=== RUNNING STRATEGY ===")
+    print("=== RUNNING STRATEGY ===")
 
-    # Получаем ATR BTC (по фьючерсам)
-    atr_value = await calculate_atr()
-    print(f"[{datetime.datetime.now()}] ✅ Current ATR (BTC): {atr_value:.2f}")
+    # Получение свечей BTC
+    df = await fetch_btc_candles()
 
-    # Получаем последнюю свечу BTC
-    step_data = await get_latest_candle()
-    if step_data is None:
-        print("⚠️ Не удалось получить последнюю свечу.")
-        return
+    # Расчёт ATR
+    atr_value = calculate_atr(df)
+    print(f"ATR = {atr_value:.2f} USDT")
 
-    open_price = float(step_data["open"])
-    close_price = float(step_data["close"])
-    delta = abs(close_price - open_price)
+    # Анализ текущей 5-минутной свечи
+    candle_passed_half_atr = await analyze_candle(df, atr_value)
 
-    print(f"[{datetime.datetime.now()}] 📊 BTC Δ: {delta:.2f} / {atr_value:.2f} ATR")
-
-    # Условие: если свеча прошла ≥ 50% ATR
-    if delta >= 0.5 * atr_value:
-        print(f"[{datetime.datetime.now()}] 🔍 Δ превышает 50% ATR → считаем корреляции...")
-
-        target_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT", "PEPEUSDT"]
-        correlations = {}
-
-        for symbol in target_symbols:
-            alt_df = await fetch_alt_candles(symbol)
-            corr = await calculate_correlation("BTCUSDT", alt_df)
-            correlations[symbol] = corr
-
-        print("\n📈 Коэффициенты корреляции:")
-        for sym, val in correlations.items():
-            print(f"{sym}: {val:.3f}")
-
+    # Если свеча прошла более 50% ATR, запускаем расчёт корреляции
+    if candle_passed_half_atr:
+        print("Свеча превысила 50% ATR. Запуск расчёта корреляции...")
+        await calculate_correlation()
     else:
-        print(f"[{datetime.datetime.now()}] ❌ Δ ниже 50% ATR. Корреляции не считаем.")
+        print("Свеча не превысила 50% ATR. Завершение.")
 
 # Запуск
 if __name__ == "__main__":
