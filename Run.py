@@ -1,6 +1,6 @@
 import asyncio
 from ATR import calculate_atr
-from Step import get_latest_candle
+from Step import analyze_candle
 from Correlation import calculate_correlation
 from AltFetcher import fetch_alt_candles
 
