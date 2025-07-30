@@ -26,7 +26,7 @@ async def main():
     for symbol in other_symbols:
         other_assets[symbol] = await fetch_asset_candles(symbol)
 
-    await calculate_correlation(btc_df, other_assets)
+    calculate_correlation(btc_df, other_assets)
 
 # Запуск
 if __name__ == "__main__":
