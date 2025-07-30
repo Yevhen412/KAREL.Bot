@@ -1,6 +1,6 @@
 import asyncio
 from ATR import fetch_asset_candles, calculate_atr
-from Step import analyze_latest_candle
+from Step import analyze_candle
 from Correlation import calculate_correlation
 
 async def main():
@@ -9,7 +9,7 @@ async def main():
     atr = calculate_atr(btc_df)
 
     # Анализ последней свечи
-    if not analyze_latest_candle(btc_df, atr):
+    if not analyze_candle(btc_df, atr):
         print("Свеча не прошла 50% ATR. Завершение.")
         return
 
