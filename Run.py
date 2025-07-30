@@ -4,38 +4,30 @@ from Step import analyze_candle
 from Correlation import calculate_correlation
 
 async def main():
-    # Получаем данные по BTC (фьючерсы)
-    btc_df = await fetch_asset_candles("BTCUSDT")
-    atr = calculate_atr(btc_df)
+    print("=== RUNNING STRATEGY ===")
 
-    # Анализ последней свечи
-    if not analyze_candle(btc_df, atr):
-        print("Свеча не прошла 50% ATR. Завершение.")
+    # Получение свечей BTC
+    btc_df = await fetch_asset_candles("BTCUSDT")
+
+    # Расчёт ATR
+    atr = calculate_atr(btc_df)
+    print(f"ATR = {atr:.2f} USDT")
+
+    # Анализ текущей 5-минутной свечи
+    if not await analyze_candle(btc_df, atr):
+        print("Свеча не превысила 50% ATR. Завершение.")
         return
 
-    print("Свеча прошла 50% ATR. Рассчитываем корреляции...")
+    print("Свеча превысила 50% ATR. Запуск расчёта корреляции...")
 
-    # Получаем данные по другим активам (фьючерсы)
-    eth_df = await fetch_asset_candles("ETHUSDT")
-    sol_df = await fetch_asset_candles("SOLUSDT")
-    ada_df = await fetch_asset_candles("ADAUSDT")
-    avax_df = await fetch_asset_candles("AVAXUSDT")
-    xrp_df = await fetch_asset_candles("XRPUSDT")
-    pepe_df = await fetch_asset_candles("PEPEUSDT")
+    # Получение данных по остальным активам
+    other_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT", "PEPEUSDT"]
+    other_assets = {}
+    for symbol in other_symbols:
+        other_assets[symbol] = await fetch_asset_candles(symbol)
 
-    # Формируем словарь активов
-    other_assets = {
-        "ETH": eth_df,
-        "SOL": sol_df,
-        "ADA": ada_df,
-        "AVAX": avax_df,
-        "XRP": xrp_df,
-        "PEPE": pepe_df
-    }
-
-    # Считаем корреляции
     await calculate_correlation(btc_df, other_assets)
 
-# Запускаем основной цикл
+# Запуск
 if __name__ == "__main__":
     asyncio.run(main())
