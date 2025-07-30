@@ -1,48 +1,49 @@
 import asyncio
+import pandas as pd
 from ATR import calculate_atr
 from Step import analyze_candle
-from Correlation import calculate_correlation
-from AltFetcher import fetch_alt_candles
+import aiohttp
 
-import datetime
+async def get_ohlcv():
+    url = "https://api.bybit.com/v5/market/kline"
+    params = {
+        "category": "linear",
+        "symbol": "BTCUSDT",
+        "interval": "5",
+        "limit": 100
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as resp:
+            data = await resp.json()
+            ohlcv = data["result"]["list"]
+            df = pd.DataFrame(ohlcv, columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "turnover"
+            ])
+            df["open"] = df["open"].astype(float)
+            df["high"] = df["high"].astype(float)
+            df["low"] = df["low"].astype(float)
+            df["close"] = df["close"].astype(float)
+            return df
 
 async def main():
-    print("\n=== RUNNING STRATEGY ===")
+    print("=== RUNNING STRATEGY ===")
+    
+    # 1. Получаем свечи
+    df = await get_ohlcv()
 
-    # Получаем ATR BTC (по фьючерсам)
-    atr_value = await calculate_atr()
-    print(f"[{datetime.datetime.now()}] ✅ Current ATR (BTC): {atr_value:.2f}")
+    # 2. Вычисляем ATR
+    atr_value = await calculate_atr(df)
 
-    # Получаем последнюю свечу BTC
-    step_data = await get_latest_candle()
-    if step_data is None:
-        print("⚠️ Не удалось получить последнюю свечу.")
-        return
+    # 3. Анализируем последнюю свечу
+    match, candle_info = await analyze_candle(atr_value)
 
-    open_price = float(step_data["open"])
-    close_price = float(step_data["close"])
-    delta = abs(close_price - open_price)
-
-    print(f"[{datetime.datetime.now()}] 📊 BTC Δ: {delta:.2f} / {atr_value:.2f} ATR")
-
-    # Условие: если свеча прошла ≥ 50% ATR
-    if delta >= 0.5 * atr_value:
-        print(f"[{datetime.datetime.now()}] 🔍 Δ превышает 50% ATR → считаем корреляции...")
-
-        target_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT", "PEPEUSDT"]
-        correlations = {}
-
-        for symbol in target_symbols:
-            alt_df = await fetch_alt_candles(symbol)
-            corr = await calculate_correlation("BTCUSDT", alt_df)
-            correlations[symbol] = corr
-
-        print("\n📈 Коэффициенты корреляции:")
-        for sym, val in correlations.items():
-            print(f"{sym}: {val:.3f}")
-
+    # 4. Выводим результат
+    if match:
+        print("🔥 Свеча превысила 50% ATR:")
+        print(candle_info)
     else:
-        print(f"[{datetime.datetime.now()}] ❌ Δ ниже 50% ATR. Корреляции не считаем.")
+        print("❄️ Нет импульса: свеча слишком слабая.")
 
 # Запуск
 if __name__ == "__main__":
