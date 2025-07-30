@@ -32,7 +32,7 @@ async def main():
         df = await get_ohlcv()
         print("✅ OHLCV data loaded")
 
-        atr_value = await calculate_atr(df)
+        atr_value = calculate_atr(df)
         print(f"✅ ATR calculated: {atr_value:.4f}")
 
         match, info = await analyze_candle(atr_value)
