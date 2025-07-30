@@ -4,7 +4,7 @@ import pandas as pd
 
 BYBIT_URL = "https://api.bybit.com/v5/market/kline"
 
-async def fetch_btc_candles():
+async def fetch_asset_candles():
     params = {
         "category": "linear",
         "symbol": "BTCUSDT",
@@ -34,5 +34,5 @@ def calculate_atr(df: pd.DataFrame) -> float:
     return round(atr, 2)
 
 async def get_current_atr():
-    df = await fetch_btc_candles()
+    df = await fetch_asset_candles()
     return calculate_atr(df)
