@@ -1,13 +1,13 @@
 import aiohttp
 import pandas as pd
 
-async def fetch_asset_candles(symbol):
+async def fetch_asset_candles(symbol: str):
     url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=200"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             data = await resp.json()
             df = pd.DataFrame(data["result"]["list"], columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "_", "_"
+                "timestamp", "open", "high", "low", "close", "volume"
             ])
             df = df.astype(float)
             df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit='ms')
