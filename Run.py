@@ -1,27 +1,50 @@
 import asyncio
-from ATR import fetch_btc_candles, calculate_atr
+import pandas as pd
+from ATR import calculate_atr
 from Step import analyze_candle
-from Correlation import calculate_correlation
+import aiohttp
+
+async def get_ohlcv():
+    url = "https://api.bybit.com/v5/market/kline"
+    params = {
+        "category": "linear",
+        "symbol": "BTCUSDT",
+        "interval": "5",
+        "limit": 100
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as resp:
+            data = await resp.json()
+            ohlcv = data["result"]["list"]
+            df = pd.DataFrame(ohlcv, columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "turnover"
+            ])
+            df["open"] = df["open"].astype(float)
+            df["high"] = df["high"].astype(float)
+            df["low"] = df["low"].astype(float)
+            df["close"] = df["close"].astype(float)
+            return df
 
 async def main():
-    print("=== RUNNING STRATEGY ===")
+    try:
+        print("=== RUNNING STRATEGY ===")
+        df = await get_ohlcv()
+        print("✅ OHLCV data loaded")
 
-    # Получение свечей BTC
-    df = await fetch_btc_candles()
+        atr_value = await calculate_atr(df)
+        print(f"✅ ATR calculated: {atr_value:.4f}")
 
-    # Расчёт ATR
-    atr_value = calculate_atr(df)
-    print(f"ATR = {atr_value:.2f} USDT")
+        match, info = await analyze_candle(atr_value)
 
-    # Анализ текущей 5-минутной свечи
-    candle_passed_half_atr = await analyze_candle(df, atr_value)
+        if match:
+            print("🔥 Импульс обнаружен:")
+            print(info)
+        else:
+            print("❄️ Импульса нет.")
 
-    # Если свеча прошла более 50% ATR, запускаем расчёт корреляции
-    if candle_passed_half_atr:
-        print("Свеча превысила 50% ATR. Запуск расчёта корреляции...")
-        await calculate_correlation()
-    else:
-        print("Свеча не превысила 50% ATR. Завершение.")
+    except Exception as e:
+        print("❌ ERROR in main():", str(e))
 
 # Запуск
 if __name__ == "__main__":
