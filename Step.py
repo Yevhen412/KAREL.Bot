@@ -1,7 +1,7 @@
 import aiohttp
 import pandas as pd
 
-async def analyze_candle(atr_value):
+async def analyze_candle(df, atr_value):
     url = "https://api.bybit.com/v5/market/kline"
     params = {
         "category": "linear",
