@@ -1,38 +1,33 @@
 import aiohttp
-import asyncio
 import pandas as pd
 
-BYBIT_URL = "https://api.bybit.com/v5/market/kline"
-
-async def fetch_asset_candles():
-    params = {
-        "category": "linear",
-        "symbol": "BTCUSDT",
-        "interval": "5",
-        "limit": 12
-    }
+# Загрузка свечей 5м по указанному символу
+async def fetch_asset_candles(symbol: str):
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=100"
     async with aiohttp.ClientSession() as session:
-        async with session.get(BYBIT_URL, params=params) as resp:
+        async with session.get(url) as resp:
             data = await resp.json()
-            if data["retCode"] != 0:
-                raise Exception("Failed to fetch candles:", data)
             candles = data["result"]["list"]
+
             df = pd.DataFrame(candles, columns=[
                 "timestamp", "open", "high", "low", "close", "volume", "turnover"
             ])
+
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
             df = df.astype({
-                "high": "float", "low": "float", "close": "float"
+                "open": "float",
+                "high": "float",
+                "low": "float",
+                "close": "float",
             })
+
             return df
 
-def calculate_atr(df: pd.DataFrame) -> float:
-    df["high-low"] = df["high"] - df["low"]
-    df["high-close"] = abs(df["high"] - df["close"].shift(1))
-    df["low-close"] = abs(df["low"] - df["close"].shift(1))
-    df["tr"] = df[["high-low", "high-close", "low-close"]].max(axis=1)
+# Расчёт ATR на основе последних 12 свечей
+def calculate_atr(df):
+    df["high_low"] = df["high"] - df["low"]
+    df["high_close"] = (df["high"] - df["close"].shift()).abs()
+    df["low_close"] = (df["low"] - df["close"].shift()).abs()
+    df["tr"] = df[["high_low", "high_close", "low_close"]].max(axis=1)
     atr = df["tr"].rolling(window=12).mean().iloc[-1]
-    return round(atr, 2)
-
-async def get_current_atr():
-    df = await fetch_asset_candles()
-    return calculate_atr(df)
+    return atr
