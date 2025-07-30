@@ -1,16 +1,49 @@
-from ATR import fetch_btc_candles, calculate_atr
-from Step import analyze_candle
+import asyncio
+from ATR import calculate_atr
+from Step import get_latest_candle
+from Correlation import calculate_correlation
+from AltFetcher import fetch_alt_candles
+
+import datetime
 
 async def main():
-    btc_df = await fetch_btc_candles()
-    atr_value = calculate_atr(btc_df)
+    print("\n=== RUNNING STRATEGY ===")
 
-    candle_data = await analyze_candle(atr_value)
+    # Получаем ATR BTC (по фьючерсам)
+    atr_value = await calculate_atr()
+    print(f"[{datetime.datetime.now()}] ✅ Current ATR (BTC): {atr_value:.2f}")
 
-    if candle_data:  # если свеча прошла 50% ATR
-        print("Переход к блоку 3 — расчёт корреляции (ещё не реализован)")
+    # Получаем последнюю свечу BTC
+    step_data = await get_latest_candle()
+    if step_data is None:
+        print("⚠️ Не удалось получить последнюю свечу.")
+        return
+
+    open_price = float(step_data["open"])
+    close_price = float(step_data["close"])
+    delta = abs(close_price - open_price)
+
+    print(f"[{datetime.datetime.now()}] 📊 BTC Δ: {delta:.2f} / {atr_value:.2f} ATR")
+
+    # Условие: если свеча прошла ≥ 50% ATR
+    if delta >= 0.5 * atr_value:
+        print(f"[{datetime.datetime.now()}] 🔍 Δ превышает 50% ATR → считаем корреляции...")
+
+        target_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT", "PEPEUSDT"]
+        correlations = {}
+
+        for symbol in target_symbols:
+            alt_df = await fetch_alt_candles(symbol)
+            corr = await calculate_correlation("BTCUSDT", alt_df)
+            correlations[symbol] = corr
+
+        print("\n📈 Коэффициенты корреляции:")
+        for sym, val in correlations.items():
+            print(f"{sym}: {val:.3f}")
+
     else:
-        print("Свеча не прошла 50% ATR — ждём дальше")
+        print(f"[{datetime.datetime.now()}] ❌ Δ ниже 50% ATR. Корреляции не считаем.")
 
-import asyncio
-asyncio.run(main())
+# Запуск
+if __name__ == "__main__":
+    asyncio.run(main())
