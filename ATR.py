@@ -1,33 +1,22 @@
 import aiohttp
 import pandas as pd
 
-# Загрузка свечей 5м по указанному символу
-async def fetch_asset_candles(symbol: str):
-    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=100"
+async def fetch_asset_candles(symbol):
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=200"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             data = await resp.json()
-            candles = data["result"]["list"]
-
-            df = pd.DataFrame(candles, columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "turnover"
+            df = pd.DataFrame(data["result"]["list"], columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "_", "_"
             ])
-
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
-            df = df.astype({
-                "open": "float",
-                "high": "float",
-                "low": "float",
-                "close": "float",
-            })
-
+            df = df.astype(float)
+            df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit='ms')
             return df
 
-# Расчёт ATR на основе последних 12 свечей
-def calculate_atr(df):
-    df["high_low"] = df["high"] - df["low"]
-    df["high_close"] = (df["high"] - df["close"].shift()).abs()
-    df["low_close"] = (df["low"] - df["close"].shift()).abs()
-    df["tr"] = df[["high_low", "high_close", "low_close"]].max(axis=1)
-    atr = df["tr"].rolling(window=12).mean().iloc[-1]
-    return atr
+def calculate_atr(df, period=12):
+    df["H-L"] = df["high"] - df["low"]
+    df["H-PC"] = abs(df["high"] - df["close"].shift(1))
+    df["L-PC"] = abs(df["low"] - df["close"].shift(1))
+    tr = df[["H-L", "H-PC", "L-PC"]].max(axis=1)
+    atr = tr.rolling(window=period).mean()
+    return atr.iloc[-1]
