@@ -7,7 +7,7 @@ async def fetch_asset_candles(symbol: str):
         async with session.get(url) as resp:
             data = await resp.json()
             df = pd.DataFrame(data["result"]["list"], columns=[
-                "timestamp", "open", "high", "low", "close", "volume"
+                "timestamp", "open", "high", "low", "close", "volume", "turnover"
             ])
             df = df.astype(float)
             df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit='ms')
