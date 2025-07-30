@@ -1,19 +1,16 @@
-import asyncio
 from ATR import fetch_btc_candles, calculate_atr
 from Step import analyze_candle
 
 async def main():
-    candles_df = await fetch_btc_candles()
-    atr = calculate_atr(candles_df)
-    print(f"📏 ATR = {atr:.2f} USDT")
+    btc_df = await fetch_btc_candles()
+    atr_value = calculate_atr(btc_df)
 
-    condition_met, candle_data = await analyze_candle(atr)
+    candle_data = await analyze_candle(atr_value)
 
-    if condition_met:
-        print("✅ Условие выполнено: свеча BTC прошла ≥ 50% ATR")
-        # Здесь позже вызовем блок корреляции (блок 3)
+    if candle_data:  # если свеча прошла 50% ATR
+        print("Переход к блоку 3 — расчёт корреляции (ещё не реализован)")
     else:
-        print("⏳ Условие не выполнено: свеча слабее 50% ATR")
+        print("Свеча не прошла 50% ATR — ждём дальше")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+import asyncio
+asyncio.run(main())
