@@ -1,5 +1,5 @@
 import asyncio
-from ATR import fetch_btc_candles, calculate_attr
+from ATR import fetch_btc_candles, calculate_atr
 from Step import analyze_candle
 from Correlation import calculate_correlation
 
@@ -10,7 +10,7 @@ async def main():
     df = await fetch_btc_candles()
 
     # Расчёт ATR
-    atr_value = calculate_attr(df)
+    atr_value = calculate_atr(df)
     print(f"ATR = {atr_value:.2f} USDT")
 
     # Анализ текущей 5-минутной свечи
