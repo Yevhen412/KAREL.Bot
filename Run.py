@@ -30,7 +30,7 @@ async def main():
     correlation_results = calculate_correlation(btc_df, other_assets)
     print("Результаты корреляции:")
     for symbol, value in correlation_results.items():
-    print(f"{symbol}: {value}")
+        print(f"{symbol}: {value}")
 
 # Запуск
 if __name__ == "__main__":
