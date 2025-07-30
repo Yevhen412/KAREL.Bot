@@ -21,7 +21,7 @@ async def main():
     print("Свеча превысила 50% ATR. Запуск расчёта корреляции...")
 
     # Получение данных по остальным активам
-    other_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT", "PEPEUSDT"]
+    other_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
     other_assets = {}
     for symbol in other_symbols:
         other_assets[symbol] = await fetch_asset_candles(symbol)
