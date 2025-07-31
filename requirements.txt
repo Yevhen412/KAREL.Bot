@@ -3,4 +3,5 @@ pandas
 aiohttp
 numpy
 scipy
+requests
 
