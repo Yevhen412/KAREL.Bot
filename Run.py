@@ -12,9 +12,11 @@ alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 async def main():
     try:
         # Получаем ATR по BTC
-btc_atr = await calculate_atr()
-print(f"🟡 BTC ATR: {btc_atr:.2f}")
-
+        btc_atr = await calculate_atr()
+        print(f"🟡 BTC ATR: {btc_atr:.2f}")
+    except Exception as e:
+        print(f"Ошибка при расчёте ATR: {e}")
+        return
 # Получаем свечи BTC
 btc_df = await fetch_alt_candles(btc_symbol)
 delta, direction = await analyze_candle(btc_df, btc_atr)
