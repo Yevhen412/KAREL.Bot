@@ -47,7 +47,7 @@ async def main():
             print("⏩ Δ меньше 50% ATR – пропускаем расчёт")
 
     except Exception as e:
-        await send_telegram_message(f"⚠️ Ошибка в run.py: {e}")
+        send_telegram_message(f"⚠️ Ошибка в run.py: {e}")
         print(f"Ошибка: {e}")
 
 # Запуск
