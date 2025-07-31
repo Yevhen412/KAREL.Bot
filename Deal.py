@@ -1,6 +1,6 @@
 from Telegram import send_telegram_message
 
-def simulate_trade(direction, correlated_asset, asset_data, entry_index):
+def simulate_trade(btc_direction, correlated_asset, asset_data, entry_index):
     entry_price = asset_data['close'][entry_index]
 
     # Настройки симуляции
