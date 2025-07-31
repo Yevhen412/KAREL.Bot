@@ -12,17 +12,17 @@ alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 async def main():
     try:
         # Получаем ATR по BTC
-        btc_atr = await calculate_atr()
-        print(f"🟡 BTC ATR: {btc_atr:.2f}")
+btc_atr = await calculate_atr()
+print(f"🟡 BTC ATR: {btc_atr:.2f}")
 
-        # Получаем свечи BTC
-        btc_df = await fetch_alt_candles(btc_symbol)
-        delta, direction = await analyze_candle(btc_df, btc_atr)
-        print(f"🟢 Δ: {delta:.2f}")
+# Получаем свечи BTC
+btc_df = await fetch_alt_candles(btc_symbol)
+delta, direction = await analyze_candle(btc_df, btc_atr)
+print(f"🟢 Δ: {delta:.2f}")
 
-        if delta < btc_atr * 0.5:
-            print("⛔️ Δ < 50% ATR — расчёт пропущен")
-            return
+if delta < btc_atr * 0.5:
+    print("⛔️ Δ < 50% ATR — расчёт пропущен")
+    return
 
         # Проверка на импульс
         if delta >= btc_atr * 0.5:
