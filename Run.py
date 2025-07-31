@@ -34,7 +34,7 @@ async def main():
             print(f"[Корреляции]: {correlations}")
 
             # Проверяем лаг
-            lagging_coins = detect_lag(btc_df, alt_data)
+            lagging_coins = detect_lag(btc_df, alt_data, alt_symbols)
 
             if lagging_coins:
                 for coin in lagging_coins:
