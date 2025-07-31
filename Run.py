@@ -1,3 +1,12 @@
+import asyncio
+from ATR import calculate_atr
+from Step import analyze_candle
+from Correlation import calculate_correlation
+from Lag import detect_lag
+from Deal import simulate_trade
+from Telegram import send_telegram_message
+from fetch_assets import fetch_alt_candles
+
 btc_symbol = "BTCUSDT"
 alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 
