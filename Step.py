@@ -15,9 +15,6 @@ async def analyze_candle(df, atr_value):
             data = await response.json()
             kline = data['result']['list'][0]
 
-            # DEBUG: покажем всю свечу
-            print(f"[DEBUG] Kline raw: {kline}")
-
             open_price = float(kline[1])
             high_price = float(kline[2])
             low_price = float(kline[3])
@@ -36,5 +33,4 @@ async def analyze_candle(df, atr_value):
             if delta >= 0.5 * atr_value:
                 return delta, direction
             else:
-                print("🔶 Δ меньше 50% ATR – пропускаем расчёт")
                 return delta, None
