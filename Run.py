@@ -28,7 +28,10 @@ async def main():
         print("⛔ Δ < 50% ATR — расчёт пропущен\n")
         return
 
-        # Проверка на импульс
+    except Exception as e:
+        print(f"❌ Ошибка в main(): {e}")
+        
+    # Проверка на импульс
         if delta >= btc_atr * 0.5:
             # Загружаем данные по альткоинам
             alt_data = {}
