@@ -45,7 +45,7 @@ async def main():
             print("[ ] Δ меньше 50% ATR – пропускаем расчёты")
 
     except Exception as e:
-        await send_telegram_message(f"⚠️ Ошибка в run.py: {e}")
+        send_telegram_message(f"⚠️ Ошибка в run.py: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
