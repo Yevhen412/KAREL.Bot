@@ -17,9 +17,16 @@ async def main():
         print(f"[BTC ATR]: {btc_atr:.2f}")
 
         # Получаем свечи BTC
-        btc_df = await fetch_alt_candles(btc_symbol)
-        delta, direction = await analyze_candle(btc_df, btc_atr)
-        print(f"[BTC Δ]: {delta:.2f} {direction}")
+    btc_df = await fetch_alt_candles(btc_symbol)
+    delta, direction = await analyze_candle(btc_df, btc_atr)
+
+    print(f"\n🟡 BTC ATR: {btc_atr:.2f}")
+    dir_text = f"({direction})" if direction else ""
+    print(f"🟢 Δ: {delta:.2f} {dir_text}")
+
+    if delta < btc_atr * 0.5:
+        print("⛔ Δ < 50% ATR — расчёт пропущен\n")
+        return
 
         # Проверка на импульс
         if delta >= btc_atr * 0.5:
