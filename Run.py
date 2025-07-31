@@ -3,46 +3,38 @@ from ATR import fetch_asset_candles, calculate_atr
 from Step import analyze_candle
 from Correlation import calculate_correlation
 from Lag import detect_lag
+from Deal import simulate_trade
 
-async def main():
-    print("=== RUNNING STRATEGY ===")
+simulate_trade(btc_direction, correlated_asset, asset_data, entry_index)
 
-    # Получение свечей BTC
-    btc_df = await fetch_asset_candles("BTCUSDT")
+def main():
+    print("Запуск стратегии...")
+    
+    atr = calculate_atr()
+    btc_status = check_btc_step(atr)
 
-    # Расчёт ATR
-    atr = calculate_atr(btc_df)
-    print(f"ATR = {atr:.2f} USDT")
-
-    # Анализ текущей 5-минутной свечи
-    if not await analyze_candle(btc_df, atr):
-        print("Свеча не превысила 50% ATR.")
+    if btc_status is None:
+        print("Свеча BTC не достигла 50% ATR — ожидание...")
         return
-    print("Свеча превысила 50% ATR. Запуск расчёта корреляции...")
+    
+    btc_direction = btc_status['direction']
+    entry_index = btc_status['index']  # индекс свечи для входа
 
-    # Получение данных по остальным монетам
-    other_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
-    other_assets = {}
-    for symbol in other_symbols:
-        other_assets[symbol] = await fetch_asset_candles(symbol)
+    high_corr_assets = get_high_correlations()
 
-    # Расчёт корреляции
-    correlation_results = calculate_correlation(btc_df, other_assets)
-    print("Результаты корреляции:")
-    for symbol, value in correlation_results.items():
-        print(f"{symbol}: {value}")
+    if not high_corr_assets:
+        print("Нет активов с высокой корреляцией")
+        return
 
-    # Выбор топ-2 по корреляции
-    top_symbols = sorted(correlation_results, key=correlation_results.get, reverse=True)[:2]
+    for asset, asset_data in high_corr_assets.items():
+        if asset == "BTC":
+            continue
 
-    # Поиск лага
-    lagging_symbol = detect_lag(btc_df, other_assets, top_symbols)
-    if lagging_symbol:
-        print(f"Готовность к сделке по монете: {lagging_symbol}")
-        # Здесь в будущем будет блок сделки
+        if find_lagging_asset(asset_data, entry_index, btc_direction):
+            simulate_trade(btc_direction, asset, asset_data, entry_index)
+            break  # одну сделку за проход
     else:
-        print("Переход к ожиданию следующего сигнала...")
+        print("Лагирующих активов не найдено")
 
-# Запуск
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
