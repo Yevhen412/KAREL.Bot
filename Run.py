@@ -1,5 +1,5 @@
 import asyncio
-from ATR import calculate_atr, fetch_alt_candles
+from ATR import calculate_atr, fetch_btc_candles
 from Step import analyze_candle
 from Lag import fetch_alt_data, calculate_correlation, detect_lag
 from Deal import simulate_trade
