@@ -4,7 +4,7 @@ from Step import analyze_candle
 from Lag import detect_lag
 from Correlation import calculate_correlation
 from Deal import simulate_trade
-from AltFetch import fetch_alt_candles
+from AltFetcher import fetch_alt_candles
 from Telegram import send_telegram_message
 
 btc_symbol = "BTCUSDT"
