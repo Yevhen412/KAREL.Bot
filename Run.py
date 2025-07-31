@@ -18,7 +18,7 @@ async def main():
 
         # Получаем свечи BTC
         btc_df = await fetch_alt_candles(btc_symbol)
-        delta, direction = analyze_current_step(btc_df)
+        delta, direction = analyze_candle(btc_df)
         print(f"[BTC Δ]: {delta:.2f} {direction}")
 
         # Проверка на импульс
