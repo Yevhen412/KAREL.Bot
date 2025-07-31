@@ -5,7 +5,7 @@ from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
 from Telegram import send_telegram_message
-from fetch_assets import fetch_alt_candles  # это твой блок
+from AltFetcher import fetch_alt_candles  # это твой блок
 
 async def main():
     btc_symbol = "BTCUSDT"
