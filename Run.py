@@ -39,7 +39,7 @@ async def main():
             if lagging_coins:
                 for coin in lagging_coins:
                     print(f"[ЛАГ]: {coin}")
-                    await simulate_trade(direction, coin, alt_data[coin])
+                    simulate_trade(direction, coin, alt_data[coin])
             else:
                 print("❌ Лаг не обнаружен")
 
