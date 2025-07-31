@@ -1,31 +1,34 @@
-import requests
+import aiohttp
 import pandas as pd
 import time
 
-def get_recent_candles(symbol: str, interval: str = "5", limit: int = 100):
+async def fetch_alt_candles(symbol, interval="5", limit=12):
     url = "https://api.bybit.com/v5/market/kline"
+    category = "linear"
+    end = int(time.time() * 1000)
+    start = end - (limit * int(interval) * 60 * 1000)
+
     params = {
-        "category": "linear",  # фьючерсы
+        "category": category,
         "symbol": symbol,
         "interval": interval,
-        "limit": limit,
+        "start": start,
+        "end": end,
+        "limit": limit
     }
-    response = requests.get(url, params=params)
-    response.raise_for_status()
 
-    raw = response.json()["result"]["list"]
-    df = pd.DataFrame(raw, columns=[
-        "timestamp", "open", "high", "low", "close",
-        "volume", "turnover"
-    ])
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as resp:
+            data = await resp.json()
 
-    # Приводим типы данных
-    df["open"] = df["open"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
-    df["close"] = df["close"].astype(float)
-    df["volume"] = df["volume"].astype(float)
-    df["turnover"] = df["turnover"].astype(float)
+    if "result" not in data or "list" not in data["result"]:
+        raise ValueError(f"❌ Ошибка получения данных по {symbol}: {data}")
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ms')
-    return df[::-1].reset_index(drop=True)  # от старой к новой
+    df = pd.DataFrame(data["result"]["list"])
+    df.columns = ["timestamp", "open", "high", "low", "close", "volume", "turnover"]
+    df = df[["timestamp", "open", "high", "low", "close"]]
+    df = df.astype({"open": float, "high": float, "low": float, "close": float})
+    df["timestamp"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms")
+    df.sort_values("timestamp", inplace=True)
+
+    return df
