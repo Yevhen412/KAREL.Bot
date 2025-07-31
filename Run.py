@@ -1,6 +1,6 @@
 import asyncio
 from ATR import calculate_atr
-from Step import analyze_current_step
+from Step import analyze_candle
 from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
