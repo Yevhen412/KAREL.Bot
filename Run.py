@@ -2,7 +2,7 @@ import asyncio
 from ATR import calculate_atr
 from Step import analyze_candle
 from AltFetcher import fetch_alt_candles
-from Correlation import calculate_correlations
+from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
 
