@@ -1,4 +1,5 @@
 import asyncio
+import time
 from ATR import calculate_atr
 from Step import analyze_candle
 from AltFetcher import fetch_alt_candles
@@ -10,31 +11,38 @@ btc_symbol = "BTCUSDT"
 alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 
 async def main():
-    try:
-        # Получаем ATR по BTC
-        btc_atr = await calculate_atr()
-        print(f"🟡 BTC ATR: {btc_atr:.2f}")
+    while True:
+        try:
+            # 1. Получаем ATR по BTC
+            btc_atr = await calculate_atr()
+            print(f"🟡 BTC ATR: {btc_atr:.2f}")
 
-        # Получаем свечи BTC
-        btc_df = await fetch_alt_candles(btc_symbol)
-        delta, direction = await analyze_candle(btc_df, btc_atr)
-        print(f"🟢 Δ: {delta:.2f}")
+            # 2. Получаем текущую 5-мин свечу
+            btc_df = await fetch_alt_candles(btc_symbol)
+            delta, direction = await analyze_candle(btc_df, btc_atr)
+            print(f"🟢 Δ: {delta:.2f}")
 
-        if delta < btc_atr * 0.5:
-            print("⛔️ Δ < 50% ATR — расчёт пропущен")
-            return
+            # 3. Условие входа — сильное движение
+            if delta < btc_atr * 0.5:
+                print("⛔️ Δ < 50% ATR — расчёт пропущен")
+            else:
+                # 4. Работаем с альтами
+                alt_data = await fetch_alt_candles(alt_symbols)
+                correlations = calculate_correlations(btc_df, alt_data)
+                lagging_coins = detect_lag(btc_df, alt_data, correlations)
 
-        # Если импульс подтверждён, продолжаем анализ
-        alt_data = await fetch_alt_data(alt_symbols)
-        correlations = calculate_correlations(btc_df, alt_data)
-        lagging_coins = detect_lag(btc_df, alt_data, correlations)
+                # 5. Сделка
+                if lagging_coins:
+                    for coin in lagging_coins:
+                        simulate_trade(direction, coin)
 
-        if lagging_coins:
-            for coin in lagging_coins:
-                simulate_trade(direction, coin)
+        except Exception as e:
+            print(f"Ошибка в основном цикле: {e}")
 
-    except Exception as e:
-        print(f"❌ Ошибка в main(): {e}")
+        # Ждём до начала следующей 5-минутной свечи
+        now = time.time()
+        next_candle = 300 - (now % 300)
+        await asyncio.sleep(next_candle)
 
 if __name__ == "__main__":
     asyncio.run(main())
