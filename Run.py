@@ -28,7 +28,7 @@ async def main():
             else:
                 # 4. Работаем с альтами
                 alt_data = await fetch_alt_candles(alt_symbols)
-                correlations = calculate_correlations(btc_df, alt_data)
+                correlations = calculate_correlation(btc_df, alt_data)
                 lagging_coins = detect_lag(btc_df, alt_data, correlations)
 
                 # 5. Сделка
