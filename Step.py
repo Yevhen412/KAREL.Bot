@@ -31,7 +31,7 @@ async def fetch_btc_candles(symbol="BTCUSDT", interval="5", limit=100):
         "open": float, "high": float, "low": float,
         "close": float, "volume": float
     })
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df["timestamp"] = pd.to_datetime(df["timestamp"].astype("int64"), unit="ms")
     df.sort_values("timestamp", inplace=True)
 
     return df
