@@ -19,7 +19,7 @@ async def main():
             print(f"🟡 BTC ATR: {btc_atr:.2f}")
 
             # 2. Получаем текущую 5-мин свечу
-            btc_df = await fetch_alt_candles(btc_symbol)
+            btc_df = await fetch_btc_candles(btc_symbol)
             delta, direction = await analyze_candle(btc_df, btc_atr)
             print(f"🟢 Δ: {delta:.2f}")
 
