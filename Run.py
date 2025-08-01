@@ -2,10 +2,11 @@ import asyncio
 import time
 from ATR import calculate_atr
 from Step import analyze_candle
-from AltFetcher import fetch_alt_candles
+from AltFetcher import fetch_alt_candles_batch
 from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
+
 
 btc_symbol = "BTCUSDT"
 alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
@@ -27,7 +28,7 @@ async def main():
                 print("⛔️ Δ < 50% ATR — расчёт пропущен")
             else:
                 # 4. Работаем с альтами
-                alt_data = await fetch_alt_candles(alt_symbols)
+                alt_data = await fetch_alt_candles_batch(alt_symbols)
                 correlations = calculate_correlation(btc_df, alt_data)
                 lagging_coins = detect_lag(btc_df, alt_data, correlations)
 
