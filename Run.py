@@ -6,6 +6,7 @@ from AltFetcher import fetch_alt_candles_batch
 from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
+from Telegram import send_telegram_message
 
 
 btc_symbol = "BTCUSDT"
@@ -16,16 +17,16 @@ async def main():
         try:
             # 1. Получаем ATR по BTC
             btc_atr = await calculate_atr()
-            print(f"🟡 BTC ATR: {btc_atr:.2f}")
+            send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
 
             # 2. Получаем текущую 5-мин свечу
             btc_df = await fetch_btc_candles(btc_symbol)
             delta, direction = await analyze_candle(btc_df, btc_atr)
-            print(f"🟢 Δ: {delta:.2f}")
+            send_telegram_message(f"🟢 Δ: {delta:.2f}")
 
             # 3. Условие входа — сильное движение
             if delta < btc_atr * 0.5:
-                print("⛔️ Δ < 50% ATR — расчёт пропущен")
+                send_telegram_message(f"⛔️ Δ < 50% ATR — расчёт пропущен")
             else:
                 # 4. Работаем с альтами
                 alt_data = await fetch_alt_candles_batch(alt_symbols)
@@ -38,12 +39,12 @@ async def main():
                         simulate_trade(direction, coin)
 
         except Exception as e:
-            print(f"Ошибка в основном цикле: {e}")
+            send_telegram_message(f"Ошибка в основном цикле: {e}")
 
         # Ждём до начала следующей 5-минутной свечи
         now = time.time()
         next_candle = 300 - (now % 300)
-        print("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
+        send_telegram_message(f"✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
         await asyncio.sleep(next_candle)
 
 if __name__ == "__main__":
