@@ -42,6 +42,7 @@ async def main():
         # Ждём до начала следующей 5-минутной свечи
         now = time.time()
         next_candle = 300 - (now % 300)
+        print("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
         await asyncio.sleep(next_candle)
 
 if __name__ == "__main__":
