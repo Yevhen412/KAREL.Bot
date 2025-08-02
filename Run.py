@@ -12,45 +12,52 @@ btc_symbol = "BTCUSDT"
 alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 
 async def main():
+    send_telegram_message("🔁 Контейнер перезапущен")
+
     while True:
         try:
-            # 1. Расчёт ATR
-            btc_atr = await calculate_atr()
-            send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
+            # 1. Получаем ATR
+            try:
+                btc_atr = await calculate_atr()
+                send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
+            except Exception as e:
+                send_telegram_message(f"❌ Ошибка при расчёте ATR: {e}")
+                continue
 
-            # 2. Получаем текущую свечу
-            btc_df = await fetch_btc_candles(btc_symbol)
-            delta, direction = await analyze_candle(btc_df, btc_atr)
-            send_telegram_message(f"🟢 Δ: {delta:.2f}")
+            # 2. Получаем свечу BTC
+            try:
+                btc_df = await fetch_btc_candles(btc_symbol)
+                delta, direction = await analyze_candle(btc_df, btc_atr)
+                send_telegram_message(f"🟢 Δ: {delta:.2f}")
+            except Exception as e:
+                send_telegram_message(f"❌ Ошибка при анализе свечи BTC: {e}")
+                continue
 
-            # 3. Проверка на импульс
+            # 3. Проверка на силу импульса
             if delta < btc_atr * 0.5:
                 send_telegram_message("⛔️ Δ < 50% ATR — расчёт пропущен")
             else:
-                send_telegram_message("🚀 Δ >= 50% ATR — начинаем анализ альтов")
+                try:
+                    alt_data = await fetch_alt_candles_batch(alt_symbols)
+                    correlations = calculate_correlation(btc_df, alt_data)
+                    lagging_coins = detect_lag(btc_df, alt_data, correlations)
+                except Exception as e:
+                    send_telegram_message(f"❌ Ошибка при обработке альтов: {e}")
+                    continue
 
-                # 4. Данные по альткоинам
-                alt_data = await fetch_alt_candles_batch(alt_symbols)
-                send_telegram_message(f"📊 Получены данные по альтам: {list(alt_data.keys())}")
-
-                # 5. Расчёт корреляции
-                correlations = calculate_correlation(btc_df, alt_data)
-                send_telegram_message(f"📈 Корреляции: {correlations}")
-
-                # 6. Анализ лага
-                lagging_coins = detect_lag(btc_df, alt_data, correlations)
                 if lagging_coins:
-                    send_telegram_message(f"🐌 Обнаружен лаг у: {lagging_coins}")
-                    for coin in lagging_coins:
-                        simulate_trade(direction, coin)
-                        send_telegram_message(f"💰 Симулирована сделка по {coin} в направлении {direction}")
+                    try:
+                        for coin in lagging_coins:
+                            simulate_trade(direction, coin)
+                    except Exception as e:
+                        send_telegram_message(f"❌ Ошибка при симуляции сделки: {e}")
                 else:
-                    send_telegram_message("🔕 Лаг не обнаружен — сделка не совершена")
+                    send_telegram_message("ℹ️ Лаг не обнаружен. Сделка не будет открыта.")
 
         except Exception as e:
-            send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
+            send_telegram_message(f"🚨 Ошибка в основном цикле: {e}")
 
-        # 7. Ждём до начала следующей свечи
+        # Пауза до начала следующей свечи
         now = time.time()
         next_candle = 300 - (now % 300)
         send_telegram_message("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
