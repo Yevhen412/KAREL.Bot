@@ -18,12 +18,12 @@ async def main_loop():
             # Ждём открытия новой свечи
             now = time.time()
             wait = 300 - (now % 300)
-            await send_telegram_message(f"⏳ Ждём открытия новой свечи: {int(wait)} сек...")
+            send_telegram_message(f"⏳ Ждём открытия новой свечи: {int(wait)} сек...")
             await asyncio.sleep(wait)
 
             # 1. Получаем ATR по BTC
             btc_atr = await calculate_atr()
-            await send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
+            send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
 
             # 2. Следим за текущей 5-мин свечой
             candle_reached_threshold = False
@@ -35,14 +35,14 @@ async def main_loop():
                 delta, direction = await analyze_candle(btc_df, btc_atr)
 
                 if direction:
-                    await send_telegram_message(f"🟢 Δ: {delta:.2f} — достигнуто 50% ATR")
+                    send_telegram_message(f"🟢 Δ: {delta:.2f} — достигнуто 50% ATR")
                     candle_reached_threshold = True
                     break
                 else:
                     await asyncio.sleep(10)
 
             if not candle_reached_threshold:
-                await send_telegram_message("⛔️ Свеча не достигла 50% ATR — переходим к следующей.")
+                send_telegram_message("⛔️ Свеча не достигла 50% ATR — переходим к следующей.")
                 continue
 
             # 3. Получаем данные по альтам
@@ -55,12 +55,12 @@ async def main_loop():
                 for coin in lagging_coins:
                     simulate_trade(direction, coin)
             else:
-                await send_telegram_message("ℹ️ Лаг не обнаружен. Сделка не будет открыта.")
+                send_telegram_message("ℹ️ Лаг не обнаружен. Сделка не будет открыта.")
 
         except Exception as e:
-            await send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
+            send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
 
-        await send_telegram_message("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
+        send_telegram_message("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
 
 async def main():
     await asyncio.gather(
