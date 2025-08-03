@@ -15,13 +15,13 @@ async def monitor_schedule():
 
         # Уведомление в 08:00
         if hour == 8 and not notified_start:
-            await send_telegram_message("▶️ Сессия автоматически возобновлена в 08:00.")
+            send_telegram_message("▶️ Сессия автоматически возобновлена в 08:00.")
             notified_start = True
             notified_stop = False
 
         # Остановка в 23:00
         elif hour == 23 and not notified_stop:
-            await send_telegram_message("⏹ Контейнер остановлен по расписанию в 23:00.")
+            send_telegram_message("⏹ Контейнер остановлен по расписанию в 23:00.")
             await asyncio.sleep(2)  # Дать время Telegram
             os._exit(0)
 
