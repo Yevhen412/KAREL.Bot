@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import pytz
 import os
-from main import main  # не меняем main.py
+from Run import run  # не меняем main.py
 
 tz = pytz.timezone("Europe/Amsterdam")
 
