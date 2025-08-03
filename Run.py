@@ -61,3 +61,6 @@ async def main():
 
         # 5. Ждём до следующей свечи
         send_telegram_message("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
+
+if __name__ == "__main__":
+    asyncio.run(main())
