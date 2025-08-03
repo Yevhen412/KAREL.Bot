@@ -1,30 +1,28 @@
 import asyncio
-import datetime
-import pytz
 import os
-from Run import main  # не меняем main.py
+import pytz
+from datetime import datetime
+from Telegram import send_telegram_message
 
-tz = pytz.timezone("Europe/Amsterdam")
+async def monitor_schedule():
+    tz = pytz.timezone("Europe/Amsterdam")
+    notified_start = False
+    notified_stop = False
 
-async def scheduler():
-    task = None
     while True:
-        now = datetime.datetime.now(tz)
+        now = datetime.now(tz)
         hour = now.hour
-        minute = now.minute
 
-        # Старт в 08:00
-        if hour == 8 and task is None:
-            print("▶️ Автоматический запуск в 08:00 (по Нидерландам)")
-            task = asyncio.create_task(main())
+        # Уведомление в 08:00
+        if hour == 8 and not notified_start:
+            await send_telegram_message("▶️ Сессия автоматически возобновлена в 08:00.")
+            notified_start = True
+            notified_stop = False
 
         # Остановка в 23:00
-        elif hour == 23:
-            print("🛑 Автоматическая остановка в 23:00 (по Нидерландам)")
-            await asyncio.sleep(2)
+        elif hour == 23 and not notified_stop:
+            await send_telegram_message("⏹ Контейнер остановлен по расписанию в 23:00.")
+            await asyncio.sleep(2)  # Дать время Telegram
             os._exit(0)
 
-        await asyncio.sleep(30)
-
-if __name__ == "__main__":
-    asyncio.run(scheduler())
+        await asyncio.sleep(60)
