@@ -1,5 +1,4 @@
 import asyncio
-import time
 from ATR import calculate_atr
 from Step import fetch_btc_candles, analyze_candle
 from AltFetcher import fetch_alt_candles_batch
@@ -7,15 +6,23 @@ from Correlation import calculate_correlation
 from Lag import detect_lag
 from Deal import simulate_trade
 from Telegram import send_telegram_message
+import aiohttp
 
 btc_symbol = "BTCUSDT"
 alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
 
+async def get_server_time():
+    url = "https://api.bybit.com/v5/market/time"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
+            return int(data["time"]) // 1000  # ms → sec
+
 async def main():
     while True:
         try:
-            # Ждём открытия новой свечи
-            now = time.time()
+            # ⏳ Ждём открытия новой свечи по серверному времени
+            now = await get_server_time()
             wait = 300 - (now % 300)
             send_telegram_message(f"⏳ Ждём открытия новой свечи: {int(wait)} сек...")
             await asyncio.sleep(wait)
@@ -59,8 +66,7 @@ async def main():
         except Exception as e:
             send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
 
-        # 5. Ждём до следующей свечи
+        # 5. Завершение цикла
         send_telegram_message("✅ Цикл завершён — ожидаем следующую 5-минутную свечу")
-
 if __name__ == "__main__":
     asyncio.run(main())
