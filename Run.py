@@ -1,3 +1,16 @@
+import asyncio
+import time
+from ATR import calculate_atr
+from Step import fetch_btc_candles, analyze_candle
+from AltFetcher import fetch_alt_candles_batch
+from Correlation import calculate_correlation
+from Lag import detect_lag
+from Deal import simulate_trade
+from Telegram import send_telegram_message
+
+btc_symbol = "BTCUSDT"
+alt_symbols = ["ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT", "XRPUSDT"]
+
 async def main():
     while True:
         try:
