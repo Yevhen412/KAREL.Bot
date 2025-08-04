@@ -22,7 +22,6 @@ async def main():
             # ⏳ Ждём открытия новой свечи
             now = time.time()
             wait = 300 - (now % 300)
-            send_telegram_message(f"⏳ Ждём открытия новой свечи: {int(wait)} сек...")
             await asyncio.sleep(wait)
 
             # 🟡 Получаем ATR
