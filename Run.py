@@ -4,7 +4,6 @@ from ATR import calculate_atr
 from Step import fetch_btc_candles, analyze_candle
 from AltFetcher import fetch_alt_candles_batch
 from Correlation import calculate_correlation
-from Lag import detect_lag
 from Deal import simulate_trade
 from Telegram import send_telegram_message
 from Start_stop import monitor_schedule  # Подключаем модуль расписания
@@ -48,14 +47,19 @@ async def main_loop():
             # 3. Получаем данные по альтам
             alt_data = await fetch_alt_candles_batch(alt_symbols)
             correlations = calculate_correlation(btc_df, alt_data)
-            lagging_coins = detect_lag(btc_df, alt_data, correlations)
+            if delta >= btc_atr * 0.5:
+            # Получаем альты
+                alt_data = await fetch_alt_candles_batch(alt_symbols)
+                correlations = calculate_correlation(btc_df, alt_data)
 
-            # 4. Совершаем сделки, если есть лагающие монеты
-            if lagging_coins:
-                for coin in lagging_coins:
-                    simulate_trade(direction, coin)
-            else:
-                send_telegram_message("ℹ️ Лаг не обнаружен. Сделка не будет открыта.")
+            # Фильтруем по высокой корреляции
+                highly_correlated = [symbol for symbol, corr in correlations.items() if corr >= 0.8]
+
+                if highly_correlated:
+                    for symbol in highly_correlated:
+                        simulate_trade(direction, symbol)
+                else:
+                    send_telegram_message("ℹ️ Высокой корреляции не обнаружено — сделка не открыта.")
 
         except Exception as e:
             send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
