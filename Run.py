@@ -30,7 +30,7 @@ async def main():
 
                 if delta >= 0.25 * btc_atr:
                     send_telegram_message(f"📈 Δ достиг 25% ATR — открытие сделки")
-                    simulate_trade(direction, price, btc_atr)
+                    await simulate_trade(direction, price, btc_atr)
                     break
                 else:
                     await asyncio.sleep(10)
