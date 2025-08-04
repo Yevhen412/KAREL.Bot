@@ -47,6 +47,7 @@ async def main_loop():
             # 3. Получаем данные по альтам
             alt_data = await fetch_alt_candles_batch(alt_symbols)
             correlations = calculate_correlation(btc_df, alt_data)
+            
             if delta >= btc_atr * 0.5:
             # Получаем альты
                 alt_data = await fetch_alt_candles_batch(alt_symbols)
