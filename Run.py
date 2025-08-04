@@ -10,6 +10,7 @@ btc_symbol = "BTCUSDT"
 
 async def main():
     asyncio.create_task(monitor_schedule())  # ⏰ Параллельный запуск расписания
+    asyncio.create_task(report_hourly_pnl())
 
     while True:
         try:
