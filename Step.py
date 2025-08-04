@@ -2,7 +2,6 @@ import aiohttp
 import pandas as pd
 import time
 
-# Получаем исторические свечи по BTC (для ATR)
 async def fetch_btc_candles(symbol="BTCUSDT", interval="5", limit=100):
     url = "https://api.bybit.com/v5/market/kline"
     category = "linear"
@@ -37,7 +36,6 @@ async def fetch_btc_candles(symbol="BTCUSDT", interval="5", limit=100):
 
     return df
 
-# Анализ текущей 5-минутной свечи
 async def analyze_candle(df, atr_value):
     url = "https://api.bybit.com/v5/market/kline"
     params = {
@@ -59,5 +57,4 @@ async def analyze_candle(df, atr_value):
 
             delta = abs(high_price - low_price)
             direction = "up" if close_price > open_price else "down"
-
             return delta, direction, close_price
