@@ -72,8 +72,6 @@ async def simulate_trade(direction, entry_price, atr):
 
     msg = (
         f"📤 {direction.upper()} | {result}\n"
-        f"▶️ Entry: {entry_price:.2f}\n"
-        f"⛳ Exit: {exit_price:.2f}\n"
         f"💰 PnL: {pnl:.2f} USDT"
     )
     send_telegram_message(msg)
