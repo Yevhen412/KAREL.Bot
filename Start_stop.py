@@ -1,48 +1,29 @@
 import asyncio
-import time
-from ATR import calculate_atr
-from Step import fetch_btc_candles, analyze_candle
-from Deal import simulate_trade
+import os
+import pytz
+from datetime import datetime
 from Telegram import send_telegram_message
-from Start_stop import monitor_schedule  # ⬅️ Подключаем планировщик времени
 
-btc_symbol = "BTCUSDT"
-
-async def main():
-    # Запускаем мониторинг времени в фоновом режиме
-    asyncio.create_task(monitor_schedule())
+async def monitor_schedule():
+    tz = pytz.timezone("Europe/Amsterdam")
+    notified_start = False
+    notified_stop = False
 
     while True:
-        try:
-            # Ждём открытия новой свечи
-            now = time.time()
-            wait = 300 - (now % 300)
-            send_telegram_message(f"⏳ Ждём открытия новой свечи: {int(wait)} сек...")
-            await asyncio.sleep(wait)
+        now = datetime.now(tz)
+        hour = now.hour
+        minute = now.minute
 
-            # 1. Расчёт ATR
-            btc_atr = await calculate_atr()
-            send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
+        # Уведомление в 08:00
+        if hour == 8 and minute == 0 and not notified_start:
+            send_telegram_message("▶️ Сессия автоматически возобновлена в 08:00.")
+            notified_start = True
+            notified_stop = False
 
-            # 2. Наблюдение за текущей 5-мин свечой
-            delta = 0
-            direction = None
+        # Остановка в 23:00
+        elif hour == 23 and minute == 0 and not notified_stop:
+            send_telegram_message("⏹ Контейнер остановлен по расписанию в 23:00.")
+            await asyncio.sleep(2)
+            os._exit(0)
 
-            while True:
-                btc_df = await fetch_btc_candles()
-                delta, direction = await analyze_candle(btc_df, btc_atr)
-
-                if delta >= 0.25 * btc_atr:
-                    send_telegram_message(f"📈 Δ достиг 25% ATR — открытие сделки")
-                    simulate_trade(direction, delta, btc_atr)
-                    break
-                else:
-                    await asyncio.sleep(10)
-
-        except Exception as e:
-            send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
-
-        send_telegram_message("✅ Цикл завершён — ожидание следующей свечи")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        await asyncio.sleep(30)
