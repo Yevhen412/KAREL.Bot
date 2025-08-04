@@ -2,7 +2,7 @@ import aiohttp
 import pandas as pd
 import time
 
-# Получение свечей BTC
+# Получаем исторические свечи по BTC (для ATR)
 async def fetch_btc_candles(symbol="BTCUSDT", interval="5", limit=100):
     url = "https://api.bybit.com/v5/market/kline"
     category = "linear"
@@ -37,24 +37,27 @@ async def fetch_btc_candles(symbol="BTCUSDT", interval="5", limit=100):
 
     return df
 
-# Анализ текущей 5-мин свечи
+# Анализ текущей 5-минутной свечи
 async def analyze_candle(df, atr_value):
-    current = df.iloc[-1]  # последняя (текущая) свеча
+    url = "https://api.bybit.com/v5/market/kline"
+    params = {
+        "category": "linear",
+        "symbol": "BTCUSDT",
+        "interval": "5",
+        "limit": 1
+    }
 
-    open_price = current["open"]
-    high_price = current["high"]
-    low_price = current["low"]
-    close_price = current["close"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as response:
+            data = await response.json()
+            kline = data['result']['list'][0]
 
-    # Проверка на свечу без движения
-    if high_price == low_price:
-        print("[⚠️ WARNING] High == Low — свеча без движения. Пропуск анализа.")
-        return 0.0, None
+            open_price = float(kline[1])
+            high_price = float(kline[2])
+            low_price = float(kline[3])
+            close_price = float(kline[4])
 
-    delta = abs(high_price - low_price)
-    direction = "up" if close_price > open_price else "down"
+            delta = abs(high_price - low_price)
+            direction = "up" if close_price > open_price else "down"
 
-    if delta >= 0.5 * atr_value:
-        return delta, direction
-    else:
-        return delta, None
+            return delta, direction, close_price
