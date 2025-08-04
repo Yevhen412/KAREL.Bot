@@ -2,7 +2,7 @@ import asyncio
 import time
 from ATR import calculate_atr
 from Step import fetch_btc_candles, analyze_candle
-from Deal import simulate_trade
+from Deal import simulate_trade, report_hourly_pnl 
 from Telegram import send_telegram_message
 from Start_stop import monitor_schedule  # ⬅️ Автостарт и автостоп по времени
 
