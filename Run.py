@@ -26,7 +26,6 @@ async def main():
 
             # 🟡 Получаем ATR
             btc_atr = await calculate_atr()
-            send_telegram_message(f"🟡 BTC ATR: {btc_atr:.2f}")
 
             # 👁 Наблюдение за свечой
             while True:
@@ -41,8 +40,6 @@ async def main():
 
         except Exception as e:
             send_telegram_message(f"❌ Ошибка в основном цикле: {e}")
-
-        send_telegram_message("✅ Цикл завершён — ожидание следующей свечи")
 
 if __name__ == "__main__":
     asyncio.run(main())
