@@ -2,14 +2,19 @@ import asyncio
 import aiohttp
 from Telegram import send_telegram_message
 
-total_pnl = 0  # Глобальный PnL за последний час
+# Глобальный накопленный PnL
+total_pnl = 0
+
+# Размер сделки в долларах
+deal_size = 200
 
 async def get_current_price():
     url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             data = await resp.json()
-            return float(data["result"]["list"][0]["lastPrice"])
+            price = float(data["result"]["list"][0]["lastPrice"])
+            return price
 
 async def simulate_trade(direction, entry_price, atr):
     global total_pnl
@@ -24,60 +29,58 @@ async def simulate_trade(direction, entry_price, atr):
         take_profit = entry_price - tp_distance
         stop_loss = entry_price + sl_distance
 
-    max_duration = 270  # максимум 4.5 минуты
+    send_telegram_message(
+        f"📤 Сделка открыта: {direction.upper()} | Вход: {entry_price:.2f} | TP: {take_profit:.2f} | SL: {stop_loss:.2f}"
+    )
+
+    max_duration = 270  # 4.5 минуты
     elapsed = 0
-    pnl = 0
-    result = "⏱ По времени"
-    exit_price = entry_price
 
     while elapsed < max_duration:
         current_price = await get_current_price()
 
         if direction == "up":
             if current_price >= take_profit:
-                pnl = take_profit - entry_price
-                result = "✅ TP"
-                exit_price = take_profit
-                break
+                pnl = (take_profit - entry_price) * (deal_size / entry_price)
+                total_pnl += pnl
+                send_telegram_message(f"✅ TP достигнут | Прибыль: {pnl:.2f} USDT")
+                return
             elif current_price <= stop_loss:
-                pnl = stop_loss - entry_price
-                result = "🛑 SL"
-                exit_price = stop_loss
-                break
+                pnl = (stop_loss - entry_price) * (deal_size / entry_price)
+                total_pnl += pnl
+                send_telegram_message(f"🛑 SL сработал | Убыток: {pnl:.2f} USDT")
+                return
 
         else:  # direction == "down"
             if current_price <= take_profit:
-                pnl = entry_price - take_profit
-                result = "✅ TP"
-                exit_price = take_profit
-                break
+                pnl = (entry_price - take_profit) * (deal_size / entry_price)
+                total_pnl += pnl
+                send_telegram_message(f"✅ TP достигнут | Прибыль: {pnl:.2f} USDT")
+                return
             elif current_price >= stop_loss:
-                pnl = entry_price - stop_loss
-                result = "🛑 SL"
-                exit_price = stop_loss
-                break
+                pnl = (entry_price - stop_loss) * (deal_size / entry_price)
+                total_pnl += pnl
+                send_telegram_message(f"🛑 SL сработал | Убыток: {pnl:.2f} USDT")
+                return
 
         await asyncio.sleep(5)
         elapsed += 5
 
-    if result == "⏱ По времени":
-        current_price = await get_current_price()
-        exit_price = current_price
-        if direction == "up":
-            pnl = current_price - entry_price
-        else:
-            pnl = entry_price - current_price
+    # Время истекло — фиксируем результат по текущей цене
+    final_price = await get_current_price()
+    if direction == "up":
+        pnl = (final_price - entry_price) * (deal_size / entry_price)
+    else:
+        pnl = (entry_price - final_price) * (deal_size / entry_price)
 
     total_pnl += pnl
-
-    msg = (
-        f"📤 {direction.upper()} | {result}\n"
-        f"💰 PnL: {pnl:.2f} USDT"
-    )
-    send_telegram_message(msg)
+    status = "📉 Сделка закрыта по времени"
+    result = "прибыль" if pnl > 0 else "убыток"
+    send_telegram_message(f"{status} | {result}: {pnl:.2f} USDT")
 
 async def report_hourly_pnl():
     global total_pnl
-    msg = f"📊 Почасовой PnL: {total_pnl:.2f} USDT"
-    send_telegram_message(msg)
-    total_pnl = 0   
+    while True:
+        await asyncio.sleep(3600)
+        send_telegram_message(f"🕒 Прибыль за последний час: {total_pnl:.2f} USDT")
+        total_pnl = 0
