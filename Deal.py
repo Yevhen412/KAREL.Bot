@@ -19,8 +19,8 @@ async def get_current_price():
 async def simulate_trade(direction, entry_price, atr):
     global total_pnl
 
-    tp_distance = 0.5 * atr
-    sl_distance = 0.25 * atr
+    tp_distance = 0.25 * atr
+    sl_distance = 0.13 * atr
 
     if direction == "up":
         take_profit = entry_price + tp_distance
