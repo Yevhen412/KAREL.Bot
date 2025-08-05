@@ -6,11 +6,19 @@ from Deal import simulate_trade, report_hourly_pnl
 from Telegram import send_telegram_message
 from Start_stop import monitor_schedule  # ⬅️ Автостарт и автостоп по времени
 
+def is_trading_hours():
+    tz = pytz.timezone("Europe/Amsterdam")
+    now = datetime.now(tz)
+    return 8 <= now.hour < 23
+
 btc_symbol = "BTCUSDT"
 
 async def main():
-    asyncio.create_task(monitor_schedule())  # ⏰ Запуск фонового мониторинга расписания
+    if not is_trading_hours():
+        print("⏹ Вне торговых часов. Бот не запускается.")
+        return
 
+    asyncio.create_task(monitor_schedule())
     while True:
         try:
             # 📊 Ежечасный PnL-отчёт
