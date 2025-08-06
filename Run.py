@@ -1,7 +1,9 @@
-from screen import DexScreenerSelenium
+import asyncio
+from screen import PumpFunListener
 
-def handle_token(t):
-    print("🔔 Новый токен:", t)
+async def handle_token(token):
+    print("🆕 Новый токен:", token["tokenSymbol"], "| Адрес:", token["tokenAddress"])
 
-monitor = DexScreenerSelenium(callback=handle_token, delay=5)
-monitor.run()
+if __name__ == "__main__":
+    listener = PumpFunListener(callback=handle_token)
+    asyncio.run(listener.connect())
