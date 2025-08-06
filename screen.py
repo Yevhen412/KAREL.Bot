@@ -1,42 +1,43 @@
+# screen_dex.py
+
 import requests
 import time
 
-class TokenMonitor:
-    def __init__(self, callback, delay=2):
-        self.seen_tokens = set()
+class DexScreenerMonitor:
+    def __init__(self, callback, delay=3):
         self.callback = callback
-        self.delay = delay  # опрос каждые N секунд
+        self.delay = delay  # пауза между запросами
+        self.seen_pairs = set()
 
-    def fetch_new_tokens(self):
-        url = "https://public-api.birdeye.so/public/tokenlist?sort_by=created_at&sort_type=desc"
-        headers = {
-            "X-API-KEY": "839342d297b044e9b3c20984d128a757"  # ← вставь свой ключ сюда
-        }
+    def fetch_new_pairs(self):
+        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-            tokens = data.get("data", {}).get("tokens", [])
-            return tokens
+            pairs = data.get("pairs", [])
+            return pairs
         except Exception as e:
-            print(f"[screen.py] ❌ Ошибка при получении токенов: {e}")
+            print(f"[screen_dex.py] ❌ Ошибка при получении пар: {e}")
             return []
 
     def run(self):
-        print("[screen.py] ▶️ Мониторинг новых токенов запущен.")
+        print("[screen_dex.py] ▶️ Мониторинг новых пар Solana через DexScreener запущен.")
         while True:
-            tokens = self.fetch_new_tokens()
-            for token in tokens:
-                address = token.get("address")
-                if address and address not in self.seen_tokens:
-                    self.seen_tokens.add(address)
+            pairs = self.fetch_new_pairs()
+            for pair in pairs:
+                address = pair.get("pairAddress")
+                if address and address not in self.seen_pairs:
+                    self.seen_pairs.add(address)
                     token_data = {
-                        "name": token.get("name"),
-                        "symbol": token.get("symbol"),
+                        "name": pair.get("baseToken", {}).get("name"),
+                        "symbol": pair.get("baseToken", {}).get("symbol"),
                         "address": address,
-                        "created_at": token.get("created_at"),
-                        "creator": token.get("creator")
+                        "priceUsd": pair.get("priceUsd"),
+                        "liquidity": pair.get("liquidity", {}).get("usd"),
+                        "fdv": pair.get("fdv"),
+                        "createdAt": pair.get("pairCreatedAt")
                     }
-                    print(f"[screen.py] 🆕 Новый токен: {token_data['name']} ({token_data['symbol']})")
+                    print(f"[screen_dex.py] 🆕 Новый токен: {token_data['symbol']} | Цена: ${token_data['priceUsd']}")
                     self.callback(token_data)
             time.sleep(self.delay)
