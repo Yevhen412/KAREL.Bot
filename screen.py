@@ -1,12 +1,10 @@
-# screen_dex.py
-
 import requests
 import time
 
 class DexScreenerMonitor:
     def __init__(self, callback, delay=3):
         self.callback = callback
-        self.delay = delay  # пауза между запросами
+        self.delay = delay
         self.seen_pairs = set()
 
     def fetch_new_pairs(self):
@@ -22,11 +20,14 @@ class DexScreenerMonitor:
             return []
 
     def run(self):
-        print("[screen_dex.py] ▶️ Мониторинг новых пар Solana через DexScreener запущен.")
+        print("[screen_dex.py] ▶️ Мониторинг новых пар через DexScreener запущен.")
         while True:
             pairs = self.fetch_new_pairs()
             for pair in pairs:
                 address = pair.get("pairAddress")
+                chain = pair.get("chainId", "").lower()
+                if chain != "solana":
+                    continue  # пропускаем не-Solana
                 if address and address not in self.seen_pairs:
                     self.seen_pairs.add(address)
                     token_data = {
