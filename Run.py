@@ -1,6 +1,6 @@
 # main.py
 
-from screen_scraper import DexScreenerScraper
+from screen import DexScreenerScraper
 
 def handle_token(token):
     print(f"[main.py] Обнаружен: {token['symbol']} | Цена: {token['priceUsd']} | LP: ${token['liquidity']}")
