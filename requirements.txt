@@ -6,4 +6,6 @@ scipy
 requests
 pytz
 beautifulsoup4
+selenium
+webdriver-manager
 
