@@ -1,4 +1,4 @@
-from screen_selenium import DexScreenerSelenium
+from screen import DexScreenerSelenium
 
 def handle_token(t):
     print("🔔 Новый токен:", t)
