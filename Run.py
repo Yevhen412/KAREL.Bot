@@ -1,10 +1,7 @@
-# main.py
-
 from screen import DexScreenerScraper
 
-def handle_token(token):
-    print(f"[main.py] Обнаружен: {token['symbol']} | Цена: {token['priceUsd']} | LP: ${token['liquidity']}")
+def handle_new_token(token):
+    print(f"🟢 Новый токен: {token['symbol']} — {token['name']} ({token['address']})")
 
-if __name__ == "__main__":
-    scraper = DexScreenerScraper(callback=handle_token)
-    scraper.run()
+scraper = DexScreenerScraper(callback=handle_new_token, delay=5)
+scraper.run()
