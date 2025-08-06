@@ -1,8 +1,10 @@
-from screen import TokenMonitor
+# main.py
+
+from screen_dex import DexScreenerMonitor
 
 def handle_new_token(token):
-    print(f"[main.py] Обнаружен мемкоин: {token['name']} | Адрес: {token['address']}")
+    print(f"[main.py] Обнаружен токен: {token['symbol']} | Цена: {token['priceUsd']} | LP: ${token['liquidity']}")
 
 if __name__ == "__main__":
-    monitor = TokenMonitor(callback=handle_new_token)
+    monitor = DexScreenerMonitor(callback=handle_new_token)
     monitor.run()
