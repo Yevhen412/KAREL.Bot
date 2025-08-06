@@ -1,5 +1,4 @@
 import requests
-from bs4 import BeautifulSoup
 import time
 
 class DexScreenerScraper:
@@ -9,69 +8,43 @@ class DexScreenerScraper:
         self.seen_addresses = set()
 
     def fetch_new_pairs(self):
-        url = "https://dexscreener.com/new-pairs"
-        headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-        }
+        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
-            return response.text
+            return response.json()
         except Exception as e:
-            print(f"[screen_scraper.py] ❌ Ошибка при получении HTML: {e}")
+            print(f"[screen_scraper.py] ❌ Ошибка при получении JSON: {e}")
             return None
 
-    def parse_pairs(self, html):
-        soup = BeautifulSoup(html, "html.parser")
-        rows = soup.select("tr")  # каждая строка — это пара
+    def parse_pairs(self, data):
+        if not data or "pairs" not in data:
+            return []
 
         new_tokens = []
-
-        for row in rows:
-            columns = row.find_all("td")
-            if len(columns) < 6:
+        for pair in data["pairs"]:
+            try:
+                address = pair["pairAddress"]
+                name = pair["baseToken"]["name"]
+                symbol = pair["baseToken"]["symbol"]
+                if address not in self.seen_addresses:
+                    self.seen_addresses.add(address)
+                    new_tokens.append({
+                        "name": name,
+                        "symbol": symbol,
+                        "address": address
+                    })
+            except Exception as e:
+                print(f"[screen_scraper.py] ⚠️ Ошибка парсинга пары: {e}")
                 continue
-
-            # Извлечение информации
-            network = columns[1].text.strip().lower()
-            if "solana" not in network:
-                continue
-
-            name = columns[2].text.strip()
-            symbol = columns[3].text.strip()
-            price = columns[4].text.strip().replace("$", "").replace(",", "")
-            liquidity = columns[5].text.strip().replace("$", "").replace(",", "")
-            pair_link = row.select_one("a")
-            if not pair_link:
-                continue
-
-            href = pair_link.get("href")
-            pair_address = href.split("/")[-1]
-
-            if pair_address in self.seen_addresses:
-                continue
-
-            self.seen_addresses.add(pair_address)
-
-            token_data = {
-                "name": name,
-                "symbol": symbol,
-                "priceUsd": price,
-                "liquidity": liquidity,
-                "pairAddress": pair_address,
-                "network": "solana"
-            }
-
-            new_tokens.append(token_data)
 
         return new_tokens
 
     def run(self):
-        print("[screen_scraper.py] ▶️ Мониторинг новых токенов Solana через DexScreener (HTML) запущен.")
+        print("[screen_scraper.py] ▶️ Мониторинг новых токенов Solana через DexScreener API запущен.")
         while True:
-            html = self.fetch_new_pairs()
-            tokens = self.parse_pairs(html)
+            data = self.fetch_new_pairs()
+            tokens = self.parse_pairs(data)
             for token in tokens:
-                print(f"[screen_scraper.py] 🆕 {token['symbol']} | ${token['priceUsd']} | LP: ${token['liquidity']}")
                 self.callback(token)
             time.sleep(self.delay)
