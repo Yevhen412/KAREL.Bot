@@ -9,17 +9,17 @@ class DexScreenerScraper:
         self.seen_addresses = set()
 
     def fetch_new_pairs(self):
-    url = "https://dexscreener.com/new-pairs"
+        url = "https://dexscreener.com/new-pairs"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"[screen_scraper.py] ❌ Ошибка при получении HTML: {e}")
-        return None
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            print(f"[screen_scraper.py] ❌ Ошибка при получении HTML: {e}")
+            return None
 
     def parse_pairs(self, html):
         soup = BeautifulSoup(html, "html.parser")
