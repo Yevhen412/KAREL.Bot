@@ -1,37 +1,45 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-import time
+import asyncio
+import json
+import websockets
 
-class DexScreenerSelenium:
-    def __init__(self, callback, delay=5):
+class PumpFunListener:
+    def __init__(self, callback):
         self.callback = callback
-        self.delay = delay
-        self.seen = set()
-        options = Options()
-        options.headless = True
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        self.driver = webdriver.Chrome(options=options)
+        self.ws_url = "wss://api.pump.fun/socket/websocket?vsn=2.0.0"
 
-    def run(self):
-        print("[Selenium] Запускаем мониторинг DexScreener через официальный сайт")
-        while True:
-            self.driver.get("https://dexscreener.com/new-pairs")
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "tr")
-            for row in rows:
-                cols = row.find_elements(By.TAG_NAME, "td")
-                if len(cols) < 6:
-                    continue
-                chain = cols[1].text.lower()
-                if "solana" not in chain:
-                    continue
-                symbol = cols[3].text
-                link = row.find_element(By.TAG_NAME, "a").get_attribute("href")
-                addr = link.split("/")[-1]
-                if addr in self.seen:
-                    continue
-                self.seen.add(addr)
-                print(f"[S] ✅ Новый токен: {symbol} | Адрес: {addr}")
-                self.callback({"symbol": symbol, "address": addr})
-            time.sleep(self.delay)
+    async def connect(self):
+        async with websockets.connect(self.ws_url) as websocket:
+            await self.join_channel(websocket)
+
+            while True:
+                try:
+                    message = await websocket.recv()
+                    await self.handle_message(message)
+                except websockets.ConnectionClosed:
+                    print("[pump_ws.py] 🔁 Соединение закрыто. Переподключение...")
+                    await asyncio.sleep(2)
+                    await self.connect()
+
+    async def join_channel(self, websocket):
+        join_msg = [
+            None,
+            "1",
+            "token:global",
+            "phx_join",
+            {}
+        ]
+        await websocket.send(json.dumps(join_msg))
+        print("[pump_ws.py] ✅ Подключено к каналу Pump.fun")
+
+    async def handle_message(self, raw_msg):
+        try:
+            data = json.loads(raw_msg)
+            if isinstance(data, list) and len(data) > 4:
+                event_type = data[3]
+                payload = data[4]
+                if event_type == "global_tokens":
+                    tokens = payload.get("tokens", [])
+                    for token in tokens:
+                        await self.callback(token)
+        except Exception as e:
+            print(f"[pump_ws.py] ⚠️ Ошибка разбора сообщения: {e}")
