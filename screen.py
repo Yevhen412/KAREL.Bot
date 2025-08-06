@@ -1,54 +1,37 @@
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 import time
 
-class DexScreenerScraper:
+class DexScreenerSelenium:
     def __init__(self, callback, delay=5):
         self.callback = callback
         self.delay = delay
-        self.seen_addresses = set()
-
-    def fetch_new_pairs(self):
-        url = "https://api.dexscreener.com/latest/dex/pairs"
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"[screen_scraper.py] ❌ Ошибка при получении JSON: {e}")
-            return None
-
-    def parse_pairs(self, data):
-        if not data or "pairs" not in data:
-            return []
-
-        new_tokens = []
-        for pair in data["pairs"]:
-            try:
-                chain = pair.get("chainId", "").lower()
-                if chain != "solana":
-                    continue
-
-                address = pair["pairAddress"]
-                name = pair["baseToken"]["name"]
-                symbol = pair["baseToken"]["symbol"]
-                if address not in self.seen_addresses:
-                    self.seen_addresses.add(address)
-                    new_tokens.append({
-                        "name": name,
-                        "symbol": symbol,
-                        "address": address
-                    })
-            except Exception as e:
-                print(f"[screen_scraper.py] ⚠️ Ошибка парсинга пары: {e}")
-                continue
-
-        return new_tokens
+        self.seen = set()
+        options = Options()
+        options.headless = True
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        self.driver = webdriver.Chrome(options=options)
 
     def run(self):
-        print("[screen_scraper.py] ▶️ Мониторинг новых токенов Solana через DexScreener API запущен.")
+        print("[Selenium] Запускаем мониторинг DexScreener через официальный сайт")
         while True:
-            data = self.fetch_new_pairs()
-            tokens = self.parse_pairs(data)
-            for token in tokens:
-                self.callback(token)
+            self.driver.get("https://dexscreener.com/new-pairs")
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "tr")
+            for row in rows:
+                cols = row.find_elements(By.TAG_NAME, "td")
+                if len(cols) < 6:
+                    continue
+                chain = cols[1].text.lower()
+                if "solana" not in chain:
+                    continue
+                symbol = cols[3].text
+                link = row.find_element(By.TAG_NAME, "a").get_attribute("href")
+                addr = link.split("/")[-1]
+                if addr in self.seen:
+                    continue
+                self.seen.add(addr)
+                print(f"[S] ✅ Новый токен: {symbol} | Адрес: {addr}")
+                self.callback({"symbol": symbol, "address": addr})
             time.sleep(self.delay)
