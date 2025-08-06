@@ -8,7 +8,7 @@ class DexScreenerScraper:
         self.seen_addresses = set()
 
     def fetch_new_pairs(self):
-        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
+        url = "https://api.dexscreener.com/latest/dex/pairs"
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
@@ -24,6 +24,10 @@ class DexScreenerScraper:
         new_tokens = []
         for pair in data["pairs"]:
             try:
+                chain = pair.get("chainId", "").lower()
+                if chain != "solana":
+                    continue
+
                 address = pair["pairAddress"]
                 name = pair["baseToken"]["name"]
                 symbol = pair["baseToken"]["symbol"]
