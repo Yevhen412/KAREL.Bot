@@ -1,7 +1,7 @@
-from screen import DexScreenerScraper
+from screen_selenium import DexScreenerSelenium
 
-def handle_new_token(token):
-    print(f"🟢 Новый токен: {token['symbol']} — {token['name']} ({token['address']})")
+def handle_token(t):
+    print("🔔 Новый токен:", t)
 
-scraper = DexScreenerScraper(callback=handle_new_token, delay=5)
-scraper.run()
+monitor = DexScreenerSelenium(callback=handle_token, delay=5)
+monitor.run()
