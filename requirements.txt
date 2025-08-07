@@ -1,6 +1,5 @@
 aiohttp==3.9.3
 pandas
-aiohttp
 numpy
 scipy
 requests
