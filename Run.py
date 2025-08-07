@@ -1,6 +1,8 @@
+import os
 from telegram.ext import Updater, CommandHandler
 from Deal import run_micro_scalper
 import threading
+
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
