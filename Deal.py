@@ -67,6 +67,7 @@ def run_micro_scalper():
             continue
 
         entry_price = get_current_price()
+        send_telegram_message(f"🔄 Цикл жив. Цена BTC: {entry_price}")
         if entry_price is None:
             continue
 
