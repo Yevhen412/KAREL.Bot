@@ -6,4 +6,6 @@ scipy
 requests
 pytz
 websockets 
+python-telegram-bot==13.15
+
 
