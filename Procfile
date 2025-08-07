@@ -1,1 +1,1 @@
-worker: python Run.py
+worker: python Deal.py
