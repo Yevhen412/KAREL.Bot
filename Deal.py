@@ -1,85 +1,80 @@
-"""
+# scalper.py
 import time
 from datetime import datetime
 from decimal import Decimal, getcontext
 import requests
 
-# Повышаем точность для денежных расчётов
+# БОльшая точность для денежных расчётов
 getcontext().prec = 28
 
-# ====== НАСТРОЙКИ ======
-PAIR = "BTCUSDT"                  # Bybit USDT-фьючерс
-LEVERAGE = Decimal("3")           # плечо
-TRADE_AMOUNT = Decimal("200")     # из собственных средств, USDT (изолированная маржа)
-TAKER_FEE = Decimal("0.001")      # 0.1% на вход и 0.1% на выход (taker)
-TARGET_NET_PROFIT = Decimal("0.01")  # ЧИСТАЯ цель (+0.01 USDT)
-POLL_PRICE_SEC = 0.2              # как часто опрашивать цену, когда позиция открыта
-MAX_OPEN_PER_SEC = 1              # не более 1 открытия в секунду
+# ===== НАСТРОЙКИ =====
+PAIR = "BTCUSDT"                      # Bybit USDT-перп (linear)
+LEVERAGE = Decimal("3")               # плечо x3
+TRADE_AMOUNT = Decimal("200")         # твоя изолированная маржа, USDT
+TAKER_FEE = Decimal("0.001")          # 0.1% за сторону (вход и выход = 2 * 0.1%)
+TARGET_NET_PROFIT = Decimal("0.01")   # чистыми +$0.01
+POLL_PRICE_SEC = Decimal("0.2")       # частота опроса цены, когда позиция открыта
+MAX_OPEN_PER_SEC = Decimal("1")       # не чаще 1 открытия в секунду
 
-# ====== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ======
+# ===== СОСТОЯНИЕ =====
 in_position = False
-last_open_ts = 0.0
+last_open_ts = Decimal("0")
 entry_price: Decimal | None = None
 entry_time: datetime | None = None
-required_exit_price: Decimal | None = None  # цена, дающая net >= +0.01 после комиссий
+required_exit_price: Decimal | None = None
 
-# ====== УТИЛИТЫ ======
+# ===== УТИЛИТЫ =====
 def get_current_price() -> Decimal | None:
-    """
-    Реальная последняя цена с Bybit v5 (фьючерсный рынок / linear).
-    """
-    url = "https://api.bybit.com/v5/market/tickers"
+    """Реальная последняя цена Bybit v5 для фьючерсов (linear)."""
     try:
-        r = requests.get(url, params={"category": "linear", "symbol": PAIR}, timeout=2)
+        r = requests.get(
+            "https://api.bybit.com/v5/market/tickers",
+            params={"category": "linear", "symbol": PAIR},
+            timeout=2
+        )
         j = r.json()
-        # ожидаем структуру {"result":{"list":[{"lastPrice":"..."}]}}
-        price = Decimal(j["result"]["list"][0]["lastPrice"])
-        return price
+        return Decimal(j["result"]["list"][0]["lastPrice"])
     except Exception as e:
         print(f"❌ Ошибка цены: {e}")
         return None
 
-def position_value() -> Decimal:
-    """Нотионал позиции с учётом плеча."""
-    return TRADE_AMOUNT * LEVERAGE  # USDT
+def notional() -> Decimal:
+    """Нотиционал позиции (USDT)."""
+    return TRADE_AMOUNT * LEVERAGE
 
-def total_fees(entry_p: Decimal, exit_p: Decimal | None = None) -> Decimal:
-    """
-    Комиссия биржи считается от нотиционала сделки (price*qty = notional).
-    Берём «по-простому»: per side = notional * fee; всего два раза (вход+выход).
-    """
-    notional = position_value()
-    # если выход ещё не известен — всё равно комиссии одинаковы (notional одинаковый)
-    return notional * TAKER_FEE * 2
+def qty(entry_p: Decimal) -> Decimal:
+    """Количество контрактов (BTC) = notional / entry_price."""
+    return notional() / entry_p
 
 def gross_pnl(entry_p: Decimal, exit_p: Decimal) -> Decimal:
-    """
-    Реальный PnL для USDT-маржин фьючерса (linear):
-    PnL = (exit - entry) * qty, где qty = notional / entry.
-    """
-    notional = position_value()
-    qty = notional / entry_p
-    return (exit_p - entry_p) * qty
+    """Gross PnL = (exit - entry) * qty."""
+    return (exit_p - entry_p) * qty(entry_p)
+
+def total_fees() -> Decimal:
+    """Суммарные комиссии за вход+выход как taker: notional * (fee_in + fee_out)."""
+    return notional() * TAKER_FEE * 2
 
 def net_pnl(entry_p: Decimal, exit_p: Decimal) -> Decimal:
-    """Чистая прибыль после двух комиссий."""
-    return gross_pnl(entry_p, exit_p) - total_fees(entry_p, exit_p)
+    """Net PnL = Gross - Fees."""
+    return gross_pnl(entry_p, exit_p) - total_fees()
 
 def solve_required_exit_price(entry_p: Decimal) -> Decimal:
     """
-    Найдём цену выхода, при которой NET >= TARGET_NET_PROFIT.
-    NET = (p_exit - p_entry) * (notional / p_entry) - (notional * fee * 2)
-    => p_exit >= p_entry + (TARGET + notional*fee*2) * (p_entry / notional)
+    Находим минимальную цену выхода, при которой
+    NET >= TARGET_NET_PROFIT (учтены две комиссии).
+    NET = (p_exit - p_entry) * (notional / p_entry) - (notional * 2 * fee)
+    => p_exit >= p_entry + (TARGET + notional*2*fee) * (p_entry / notional)
     """
-    notional = position_value()
-    add = (TARGET_NET_PROFIT + (notional * TAKER_FEE * 2)) * (entry_p / notional)
-    return entry_p + add
+    need_gross = TARGET_NET_PROFIT + total_fees()
+    delta_price = need_gross / qty(entry_p)          # = need_gross * (entry_p / notional)
+    return entry_p + delta_price
 
 def is_margin_call(current_p: Decimal) -> bool:
     """
-    Простейшая модель маржин-колла при изолированной марже:
-    если нереализованный убыток по позиции <= -TRADE_AMOUNT (вся собственная маржа),
-    считаем, что произошёл margin call.
+    Простейшая модель ликвидации (изолированная маржа):
+    если нереализованный убыток по позиции <= -TRADE_AMOUNT, считаем margin call.
+    (Процент ликвидации в реальности зависит от maintenance margin, но
+     для симуляции этого достаточно.)
     """
     unrealized = gross_pnl(entry_price, current_p)
     return unrealized <= -TRADE_AMOUNT
@@ -87,25 +82,15 @@ def is_margin_call(current_p: Decimal) -> bool:
 def fmt(x: Decimal, n=2) -> str:
     return f"{x:.{n}f}"
 
-def safe_send_telegram(text: str):
-    """
-    Если у тебя есть Telegram.py с send_telegram_message, раскомментируй:
-    from Telegram import send_telegram_message
-    и зови её здесь. Сейчас — тихий no-op.
-    """
-    try:
-        from Telegram import send_telegram_message
-        send_telegram_message(text)
-    except Exception:
-        pass
+def distance_to_target(cur: Decimal, target: Decimal) -> Decimal:
+    return (target - cur) if target is not None else Decimal("0")
 
-# ====== ТОРГОВАЯ ЛОГИКА ======
-def open_trade_if_possible(now_ts: float):
+# ===== ТОРГОВАЯ ЛОГИКА =====
+def open_trade_if_possible(now_ts: Decimal):
     global in_position, last_open_ts, entry_price, entry_time, required_exit_price
     if in_position:
         return
-    # лимит на открытия: не чаще 1 в секунду
-    if now_ts - last_open_ts < (1 / MAX_OPEN_PER_SEC):
+    if now_ts - last_open_ts < (Decimal("1") / MAX_OPEN_PER_SEC):
         return
 
     price = get_current_price()
@@ -118,21 +103,15 @@ def open_trade_if_possible(now_ts: float):
     entry_time = datetime.now()
     required_exit_price = solve_required_exit_price(entry_price)
 
-    log = (
+    # Отчёт по входу
+    print(
         f"📥 ВХОД | {PAIR} | цена {fmt(entry_price)} | плечо x{LEVERAGE} | "
-        f"цель (net +{TARGET_NET_PROFIT} USDT): {fmt(required_exit_price)} | "
+        f"цель (net +{TARGET_NET_PROFIT}): {fmt(required_exit_price)} | "
         f"время {entry_time.strftime('%H:%M:%S')}"
     )
-    print(log)
-    safe_send_telegram(log)
 
 def manage_open_trade():
-    """
-    Если позиция открыта — следим за ценой до достижения TP (net>=+0.01)
-    или до маржин-колла. Позиция живёт сколько нужно.
-    """
     global in_position, entry_price, entry_time, required_exit_price
-
     if not in_position:
         return
 
@@ -140,24 +119,25 @@ def manage_open_trade():
     if price is None:
         return
 
-    # TP?
+    # Хартбит: сколько осталось до цели
+    need = distance_to_target(price, required_exit_price)
+    print(f"⏳ Цена {fmt(price)} | цель {fmt(required_exit_price)} | осталось {fmt(need)}")
+
+    # TAKE PROFIT: строго только при достижении net >= +0.01
     if price >= required_exit_price:
         exit_price = price
         exit_time = datetime.now()
-        net = net_pnl(entry_price, exit_price)
-        gross = gross_pnl(entry_price, exit_price)
+        g = gross_pnl(entry_price, exit_price)
+        fees = total_fees()
+        net = g - fees
 
-        msg = (
+        print(
             "✅ ВЫХОД (TAKE PROFIT)\n"
             f"Пара: {PAIR}\n"
-            f"Вход: {fmt(entry_price)}  ({entry_time.strftime('%H:%M:%S')})\n"
+            f"Вход:  {fmt(entry_price)}  ({entry_time.strftime('%H:%M:%S')})\n"
             f"Выход: {fmt(exit_price)}  ({exit_time.strftime('%H:%M:%S')})\n"
-            f"Gross PnL: {fmt(gross, 5)} USDT\n"
-            f"Комиссии: {fmt(total_fees(entry_price), 5)} USDT\n"
-            f"Net PnL: {fmt(net, 5)} USDT"
+            f"Gross: {fmt(g, 5)} USDT | Комиссии: {fmt(fees, 5)} USDT | Net: {fmt(net, 5)} USDT"
         )
-        print(msg)
-        safe_send_telegram(msg)
 
         # сброс состояния
         in_position = False
@@ -166,24 +146,21 @@ def manage_open_trade():
         required_exit_price = None
         return
 
-    # Margin Call?
+    # MARGIN CALL (симулируем ликвидацию при потере всей маржи)
     if is_margin_call(price):
         exit_price = price
         exit_time = datetime.now()
-        net = net_pnl(entry_price, exit_price)
-        gross = gross_pnl(entry_price, exit_price)
+        g = gross_pnl(entry_price, exit_price)
+        fees = total_fees()
+        net = g - fees
 
-        msg = (
+        print(
             "⚠️ MARGIN CALL (симуляция ликвидации)\n"
             f"Пара: {PAIR}\n"
-            f"Вход: {fmt(entry_price)}  ({entry_time.strftime('%H:%M:%S')})\n"
+            f"Вход:  {fmt(entry_price)}  ({entry_time.strftime('%H:%M:%S')})\n"
             f"Выход: {fmt(exit_price)}  ({exit_time.strftime('%H:%M:%S')})\n"
-            f"Gross PnL: {fmt(gross, 5)} USDT\n"
-            f"Комиссии (включены в Net при закрытии): {fmt(total_fees(entry_price), 5)} USDT\n"
-            f"Net PnL: {fmt(net, 5)} USDT"
+            f"Gross: {fmt(g, 5)} USDT | Комиссии: {fmt(fees, 5)} USDT | Net: {fmt(net, 5)} USDT"
         )
-        print(msg)
-        safe_send_telegram(msg)
 
         # сброс состояния
         in_position = False
@@ -192,17 +169,11 @@ def manage_open_trade():
         required_exit_price = None
         return
 
-    # Отладочный heartbeat (можно закомментировать)
-    print(f"⏳ Ожидание... текущая {fmt(price)} | цель {fmt(required_exit_price)}")
-
-# ====== MAIN LOOP ======
+# ===== MAIN =====
 if __name__ == "__main__":
-    print("📈 BTCUSDT Futures микроскальпер (симулятор) запущен.")
+    print("📈 BTCUSDT Futures микроскальпер запущен (реальные цены, REST v5).")
     while True:
-        now = time.time()
-        # 1) пытаемся открыть позицию (если нет)
-        open_trade_if_possible(now)
-        # 2) если уже открыта — ведём её до TP или margin call
-        manage_open_trade()
-        # Пауза опроса: когда позиция открыта — чаще, когда нет — реже
-        time.sleep(POLL_PRICE_SEC if in_position else 1.0)
+        now = Decimal(str(time.time()))
+        open_trade_if_possible(now)   # вход не чаще 1/сек и только если нет позиции
+        manage_open_trade()           # удерживаем до TP (net>=+0.01) или margin call
+        time.sleep(float(POLL_PRICE_SEC if in_position else Decimal("1.0")))
