@@ -2,8 +2,8 @@ from telegram.ext import Updater, CommandHandler
 from Deal import run_micro_scalper
 import threading
 
-# 🔐 ВСТАВЬ СЮДА СВОЙ ТОКЕН
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Флаг, чтобы не запускать два раза
 is_running = False
