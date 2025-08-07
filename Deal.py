@@ -1,4 +1,4 @@
-# scalper.py
+"""
 import time
 from datetime import datetime
 from decimal import Decimal, getcontext
