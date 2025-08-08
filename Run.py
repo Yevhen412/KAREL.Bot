@@ -1,40 +1,10 @@
-import os
-from telegram.ext import Updater, CommandHandler
-from Deal import run_micro_scalper
-import threading
+import asyncio
+from screen import PumpScreen
 
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# Флаг, чтобы не запускать два раза
-is_running = False
-
-def start(update, context):
-    global is_running
-    if is_running:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ Уже запущено.")
-        return
-
-    context.bot.send_message(chat_id=update.effective_chat.id, text="🚀 Запускаю стратегию...")
-
-    def run_bot():
-        global is_running
-        is_running = True
-        try:
-            run_micro_scalper()
-        except Exception as e:
-            print(f"Ошибка в стратегии: {e}")
-        is_running = False
-
-    threading.Thread(target=run_bot).start()
-
-def main():
-    updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    updater.start_polling()
-    updater.idle()
+async def on_new_token(token):
+    # тут дальше будут фильтры/покупка
+    print(f"🆕 MINT: {token['mint']} | TX: {token['tx']}")
 
 if __name__ == "__main__":
-    main()
+    scr = PumpScreen(callback=on_new_token)
+    asyncio.run(scr.run())
