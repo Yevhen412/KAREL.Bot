@@ -1,45 +1,122 @@
-import asyncio
+import os
 import json
+import time
+import asyncio
+import requests
 import websockets
 
-class PumpFunListener:
+API_KEY = os.getenv("HELIUS_API_KEY")
+PROGRAM_ID = os.getenv("PUMPFUN_PROGRAM_ID")
+
+WS_URL = f"wss://mainnet.helius-rpc.com/?api-key={API_KEY}"
+RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={API_KEY}"
+
+RECONNECT_BASE = 2  # секунды
+
+class PumpScreen:
     def __init__(self, callback):
+        if not API_KEY:
+            raise RuntimeError("HELIUS_API_KEY не задан")
+        if not PROGRAM_ID:
+            raise RuntimeError("PUMPFUN_PROGRAM_ID не задан")
         self.callback = callback
-        self.ws_url = "wss://api.pump.fun/socket/websocket?vsn=2.0.0"
 
-    async def connect(self):
-        async with websockets.connect(self.ws_url) as websocket:
-            await self.join_channel(websocket)
+    async def run(self):
+        backoff = RECONNECT_BASE
+        while True:
+            try:
+                async with websockets.connect(
+                    WS_URL,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    max_size=4_000_000
+                ) as ws:
+                    # Подписка на логи программы Pump.fun
+                    sub = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "logsSubscribe",
+                        "params": [
+                            {"mentions": [PROGRAM_ID]},
+                            {"commitment": "finalized"}
+                        ]
+                    }
+                    await ws.send(json.dumps(sub))
+                    print("[screen] ✅ Подписались на логи Pump.fun")
+                    backoff = RECONNECT_BASE
 
-            while True:
-                try:
-                    message = await websocket.recv()
-                    await self.handle_message(message)
-                except websockets.ConnectionClosed:
-                    print("[pump_ws.py] 🔁 Соединение закрыто. Переподключение...")
-                    await asyncio.sleep(2)
-                    await self.connect()
+                    while True:
+                        raw = await ws.recv()
+                        msg = json.loads(raw)
 
-    async def join_channel(self, websocket):
-        join_msg = [
-            None,
-            "1",
-            "token:global",
-            "phx_join",
-            {}
-        ]
-        await websocket.send(json.dumps(join_msg))
-        print("[pump_ws.py] ✅ Подключено к каналу Pump.fun")
+                        if msg.get("method") != "logsNotification":
+                            continue
 
-    async def handle_message(self, raw_msg):
+                        value = msg.get("params", {}).get("result", {})
+                        sig = value.get("value", {}).get("signature")
+                        if not sig:
+                            continue
+
+                        # Достаём подробности транзы и вычленяем новые mint'ы
+                        for mint in self._extract_mints(sig):
+                            token = {
+                                "mint": mint,
+                                "tx": sig,
+                                "ts": int(time.time())
+                            }
+                            await self.callback(token)
+
+            except Exception as e:
+                print(f"[screen] ⚠️ Соединение потеряно: {e}. Реконнект…")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
+
+    def _rpc(self, method, params):
+        payload = {"jsonrpc":"2.0","id":1,"method":method,"params":params}
+        r = requests.post(RPC_URL, json=payload, timeout=20)
+        r.raise_for_status()
+        return r.json()
+
+    def _extract_mints(self, signature):
+        """
+        Тянем транзакцию в jsonParsed и ищем события initializeMint/mintTo.
+        Возвращаем список адресов SPL-минтов.
+        """
         try:
-            data = json.loads(raw_msg)
-            if isinstance(data, list) and len(data) > 4:
-                event_type = data[3]
-                payload = data[4]
-                if event_type == "global_tokens":
-                    tokens = payload.get("tokens", [])
-                    for token in tokens:
-                        await self.callback(token)
+            res = self._rpc("getTransaction", [signature, {"encoding":"jsonParsed"}])
+            tx = res.get("result")
+            if not tx:
+                return []
+
+            mints = set()
+
+            meta = tx.get("meta") or {}
+            inner = meta.get("innerInstructions") or []
+            for group in inner:
+                for ix in group.get("instructions", []):
+                    parsed = ix.get("parsed") or {}
+                    if not isinstance(parsed, dict):
+                        continue
+                    typ = parsed.get("type")
+                    if typ in ("initializeMint", "initializeMint2", "mintTo"):
+                        info = parsed.get("info") or {}
+                        mint = info.get("mint")
+                        if mint:
+                            mints.add(mint)
+
+            # Подстраховка: верхний уровень инструкций
+            message = tx.get("transaction", {}).get("message", {}) or {}
+            for ix in (message.get("instructions") or []):
+                parsed = ix.get("parsed") or {}
+                if isinstance(parsed, dict):
+                    typ = parsed.get("type")
+                    if typ in ("initializeMint", "initializeMint2", "mintTo"):
+                        info = parsed.get("info") or {}
+                        mint = info.get("mint")
+                        if mint:
+                            mints.add(mint)
+
+            return list(mints)
         except Exception as e:
-            print(f"[pump_ws.py] ⚠️ Ошибка разбора сообщения: {e}")
+            print(f"[screen] ⚠️ Не смогли разобрать транзу {signature}: {e}")
+            return []
