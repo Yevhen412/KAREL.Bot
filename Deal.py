@@ -1,4 +1,3 @@
-"""
 import time
 from datetime import datetime
 from decimal import Decimal, getcontext
@@ -56,25 +55,27 @@ def total_fees() -> Decimal:
 
 def net_pnl(entry_p: Decimal, exit_p: Decimal) -> Decimal:
     """Net PnL = Gross - Fees."""
-    return gross_pnl(entry_p, exit_p) - total_fees()
+    return gross_pnl(entry_p, exit_p) - total_fees(entry_p, exit_p)
 
 def solve_required_exit_price(entry_p: Decimal) -> Decimal:
     """
     Находим минимальную цену выхода, при которой
     NET >= TARGET_NET_PROFIT (учтены две комиссии).
-    NET = (p_exit - p_entry) * (notional / p_entry) - (notional * 2 * fee)
-    => p_exit >= p_entry + (TARGET + notional*2*fee) * (p_entry / notional)
+    
+    NET = (p_exit - p_entry) * (notional / entry_price) - total_fees
+    => p_exit >= p_entry + (TARGET + notional * комиссии)
     """
-    need_gross = TARGET_NET_PROFIT + total_fees()
-    delta_price = need_gross / qty(entry_p)          # = need_gross * (entry_p / notional)
+    need_gross = TARGET_NET_PROFIT + total_fees(entry_p, entry_p)
+    delta_price = need_gross / qty(entry_p)
     return entry_p + delta_price
 
 def is_margin_call(current_p: Decimal) -> bool:
     """
-    Простейшая модель ликвидации (изолированная маржа):
-    если нереализованный убыток по позиции <= -TRADE_AMOUNT, считаем margin call.
-    (Процент ликвидации в реальности зависит от maintenance margin, но
-     для симуляции этого достаточно.)
+    Простейшая модель ликвидации (изолированная маржа).
+    Ликвидация происходит, если нереализованный убыток
+    по позиции превышает -TRADE_AMOUNT.
+    (Процент ликвидации в реальности зависит от плеча,
+    но для симуляции этого достаточно.)
     """
     unrealized = gross_pnl(entry_price, current_p)
     return unrealized <= -TRADE_AMOUNT
