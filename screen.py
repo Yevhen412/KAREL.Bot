@@ -12,19 +12,24 @@ from telegram import send_message
 import deal
 
 
-# ========= ENV / CONFIG =========
-HELIUS_API_KEY      = os.getenv("HELIUS_API_KEY")           # ОБЯЗАТЕЛЬНО
-PUMPFUN_PROGRAM_ID  = os.getenv("PUMPFUN_PROGRAM_ID")       # ОБЯЗАТЕЛЬНО (актуальный Program ID Pump.fun)
-USER_PUBKEY         = os.getenv("USER_PUBKEY")              # ОБЯЗАТЕЛЬНО (паблик кошелька, для Jupiter инструкций)
+# ========= НАСТРОЙКИ =========
+HELIUS_API_KEY      = os.getenv("HELIUS_API_KEY")
+PUMPFUN_PROGRAM_ID  = os.getenv("PUMPFUN_PROGRAM_ID")
+USER_PUBKEY         = os.getenv("USER_PUBKEY")
 
-MAX_TOKEN_AGE_SEC   = int(os.getenv("MAX_TOKEN_AGE_SEC", "60"))   # возраст токена, сек
-MAX_SELL_TAX        = float(os.getenv("MAX_SELL_TAX", "0.10"))    # мягкий фильтр (если поле есть)
-MAX_CREATOR_HOLD    = float(os.getenv("MAX_CREATOR_HOLD", "0.20"))# мягкий фильтр (если поле есть)
-MIN_LIQ_SOL         = float(os.getenv("MIN_LIQ_SOL", "2"))        # мягкий фильтр (если поле есть)
-MIN_HOLDERS         = int(os.getenv("MIN_HOLDERS", "10"))         # мягкий фильтр (если доступно)
+MAX_TOKEN_AGE_SEC   = int(os.getenv("MAX_TOKEN_AGE_SEC", "60"))
+MAX_SELL_TAX        = float(os.getenv("MAX_SELL_TAX", "0.10"))
+MAX_CREATOR_HOLD    = float(os.getenv("MAX_CREATOR_HOLD", "0.20"))
+MIN_LIQ_SOL         = float(os.getenv("MIN_LIQ_SOL", "2"))
+MIN_HOLDERS         = int(os.getenv("MIN_HOLDERS", "10"))
 
-# тестовый режим: только пишем отчёты, не заходим в сделку
+# Тестовый режим: только отчёты, без сделок
 TEST_MODE = os.getenv("TEST_MODE", "1") == "1"
+
+# Диагностика API и повторные попытки, когда данных нет
+DEBUG_API          = os.getenv("DEBUG_API", "1") == "1"
+RETRY_DELAY_SEC    = float(os.getenv("RETRY_DELAY_SEC", "3"))
+MAX_META_ATTEMPTS  = int(os.getenv("MAX_META_ATTEMPTS", "2"))
 
 WS_URL  = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
@@ -32,12 +37,12 @@ RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 JUP_BASE  = "https://quote-api.jup.ag/v6"
 WSOL_MINT = "So11111111111111111111111111111111111111112"
 
-assert HELIUS_API_KEY, "HELIUS_API_KEY is required"
-assert PUMPFUN_PROGRAM_ID, "PUMPFUN_PROGRAM_ID is required"
-assert USER_PUBKEY, "USER_PUBKEY is required (для Jupiter simulate)"
+assert HELIUS_API_KEY, "HELIUS_API_KEY обязателен"
+assert PUMPFUN_PROGRAM_ID, "PUMPFUN_PROGRAM_ID обязателен"
+assert USER_PUBKEY, "USER_PUBKEY обязателен (для simulate Jupiter)"
 
 
-# ========= FORMAT HELPERS (запрошенный блок) =========
+# ========= ХЕЛПЕРЫ ФОРМАТИРОВАНИЯ =========
 def _ok(v: bool) -> str:
     return "✅" if v else "❌"
 
@@ -47,8 +52,15 @@ def _na() -> str:
 def _short(addr: str) -> str:
     return f"{addr[:4]}…{addr[-4:]}" if addr and len(addr) > 10 else (addr or "")
 
+def _dbg(label: str, payload):
+    if DEBUG_API:
+        try:
+            print(f"[DBG] {label}: {payload}")
+        except Exception:
+            print(f"[DBG] {label}: <не удалось распечатать>")
 
-# ========= HTTP helper (httpx + retries) =========
+
+# ========= HTTP (httpx + ретраи) =========
 async def _http_json(url: str, method: str = "GET", payload=None, timeout: float = 8.0, attempts: int = 4):
     last_err = None
     for i in range(attempts):
@@ -64,11 +76,11 @@ async def _http_json(url: str, method: str = "GET", payload=None, timeout: float
         except Exception as e:
             last_err = str(e)
         await asyncio.sleep(min(0.5 * (2 ** i), 5) + random.uniform(0, 0.3))
-    print(f"[HTTP] fail {method} {url}: {last_err}")
+    print(f"[HTTP] ошибка {method} {url}: {last_err}")
     return None
 
 
-# ========= Helius / Jupiter helpers =========
+# ========= Helius / Jupiter =========
 async def helius_get_tx(signature: str) -> dict:
     payload = {
         "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
@@ -92,16 +104,26 @@ async def get_account_info_jsonparsed(pubkey: str) -> dict:
 async def get_token_metadata(mint: str) -> dict:
     url = f"https://api.helius.xyz/v0/tokens/metadata?api-key={HELIUS_API_KEY}&mints[]={mint}"
     j = await _http_json(url)
+    if not j:
+        _dbg("meta:http_empty", j)
+        return {}
     arr = (j or {}).get("tokens") or []
+    if not arr:
+        _dbg("meta:no_tokens", j)
     return arr[0] if arr else {}
 
 async def get_token_holders_count(mint: str) -> Optional[int]:
     url = f"https://api.helius.xyz/v0/tokens/holders?api-key={HELIUS_API_KEY}&mint={mint}&page=1&limit=1"
     j = await _http_json(url)
+    if not j:
+        _dbg("holders:http_empty", j)
+        return None
     if isinstance(j, dict) and "total" in j:
         return int(j["total"])
     if isinstance(j, list):
+        _dbg("holders:list_no_total", j[:3])
         return None
+    _dbg("holders:unknown_shape", j)
     return None
 
 def extract_mints_from_tx_json(tx_json: dict) -> List[str]:
@@ -130,22 +152,22 @@ def extract_mints_from_tx_json(tx_json: dict) -> List[str]:
     return list(dict.fromkeys(res))
 
 
-# ========= Honeypot / Quotes =========
+# ========= Honeypot / Котировки =========
 def _mint_risk_flags(parsed_acc: dict) -> list:
     risks = []
     info = (parsed_acc.get("data") or {}).get("parsed", {}).get("info", {}) or {}
     if info.get("mintAuthority"):
-        risks.append("mintAuthority not revoked")
+        risks.append("mintAuthority не отозван")
     if info.get("freezeAuthority"):
-        risks.append("freezeAuthority set")
+        risks.append("freezeAuthority установлен")
     ext = info.get("extensions") or {}
     if ext:
         if "transferHook" in ext:
-            risks.append("Token2022 transferHook")
+            risks.append("Token-2022 transferHook")
         tf = ext.get("transferFeeConfig") or {}
         bps = tf.get("transferFeeBasisPoints")
         if isinstance(bps, int) and bps > 1000:
-            risks.append(f"transferFee {bps/100:.2f}%")
+            risks.append(f"комиссия за перевод {bps/100:.2f}%")
     return risks
 
 async def jup_quote(mint_in: str, amount_in: int) -> Optional[dict]:
@@ -180,7 +202,7 @@ async def jup_swap_instructions(quote: dict) -> Optional[dict]:
 async def helius_simulate(ixs_resp: dict) -> Tuple[bool, str]:
     msg_b64 = ixs_resp.get("swapTransactionMessage") if ixs_resp else None
     if not msg_b64:
-        return (False, "no message from Jupiter")
+        return (False, "продажа недоступна (нет swap-инструкций)")
     payload = {
         "jsonrpc": "2.0", "id": 1, "method": "simulateTransaction",
         "params": [
@@ -189,9 +211,9 @@ async def helius_simulate(ixs_resp: dict) -> Tuple[bool, str]:
         ]
     }
     j = await _http_json(RPC_URL, method="POST", payload=payload)
-    err = (j.get("result") or {}).get("err") if j else "no result"
+    err = (j.get("result") or {}).get("err") if j else "нет результата"
     ok = err is None
-    reason = "ok" if ok else f"simulate err: {err}"
+    reason = "ок" if ok else f"ошибка симуляции: {err}"
     return (ok, reason)
 
 async def honeypot_check(mint: str) -> Tuple[bool, str]:
@@ -213,10 +235,10 @@ async def honeypot_check(mint: str) -> Tuple[bool, str]:
 
     quote = await jup_quote(mint, test_amount)
     if not quote:
-        return (False, "no Jupiter route (no pool/liquidity)")
+        return (False, "нет маршрута в Jupiter (нет пула/ликвидности)")
     ixs = await jup_swap_instructions(quote)
     if not ixs:
-        return (False, "no swap-instructions")
+        return (False, "продажа недоступна (нет swap-инструкций)")
     ok, reason = await helius_simulate(ixs)
     return (ok, reason)
 
@@ -245,13 +267,10 @@ async def jup_price_spl_in_sol(mint: str, amount_in_atoms: Optional[int] = None)
     return price_sol_per_token
 
 
-# ========= EVALUATE TOKEN (запрошенный блок) =========
+# ========= ОЦЕНКА ТОКЕНА (с ретраями и логами) =========
 async def evaluate_token(mint: str, signature: Optional[str]):
     """
-    Возвращает:
-      passed_all: bool
-      metrics: dict со всеми полями для отчёта
-      meta: dict
+    Возвращает: passed_all(bool), metrics(dict), meta(dict)
     """
     metrics = {
         "age_s": None, "age_ok": False,
@@ -261,12 +280,12 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         "creator_hold": None, "creator_hold_ok": True,
         "holders": None, "holders_ok": True,
         "liquidity": None, "liquidity_ok": True,
-        "marketcap": None,  # если появится в meta
+        "marketcap": None,
         "sellable": None,
         "price_sol": None,
     }
 
-    # Age
+    # Возраст
     now = time.time()
     created_sec = None
     if signature:
@@ -278,15 +297,33 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         metrics["age_s"] = age
         metrics["age_ok"] = age <= MAX_TOKEN_AGE_SEC
 
-    # Honeypot / Sellable
+    # Honeypot / Продаваемость
     hp_ok, hp_reason = await honeypot_check(mint)
     metrics["honeypot_ok"] = hp_ok
     metrics["honeypot_reason"] = "OK" if hp_ok else hp_reason
     metrics["sellable"] = hp_ok
 
-    # Metadata
-    meta = await get_token_metadata(mint)
+    # Метаданные и холдеры — с ретраями, если пусто
+    meta = {}
+    holders_count = None
+    for attempt in range(1, MAX_META_ATTEMPTS + 1):
+        meta = await get_token_metadata(mint) or {}
+        holders_count = await get_token_holders_count(mint)
 
+        has_any_meta = any(
+            k in meta for k in ("liquidity", "sellTax", "creatorHold", "lpLocked", "marketCap", "marketCapUsd")
+        )
+        if has_any_meta or holders_count is not None:
+            break
+        _dbg("meta_retry", {"attempt": attempt, "reason": "пустые метаданные/холдеры"})
+        await asyncio.sleep(RETRY_DELAY_SEC)
+
+    if not meta:
+        _dbg("meta_final_empty", {"mint": mint})
+    if holders_count is None:
+        _dbg("holders_final_empty", {"mint": mint})
+
+    # Разбор метаданных
     sell_tax = meta.get("sellTax")
     if isinstance(sell_tax, (int, float)):
         metrics["sell_tax"] = float(sell_tax)
@@ -302,7 +339,6 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         metrics["creator_hold"] = float(creator_hold)
         metrics["creator_hold_ok"] = float(creator_hold) <= MAX_CREATOR_HOLD
 
-    holders_count = await get_token_holders_count(mint)
     if holders_count is not None:
         metrics["holders"] = int(holders_count)
         metrics["holders_ok"] = holders_count >= MIN_HOLDERS
@@ -312,18 +348,16 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         metrics["liquidity"] = float(liq)
         metrics["liquidity_ok"] = float(liq) >= MIN_LIQ_SOL
 
-    # market cap: если в метаданных появится
     mc = meta.get("marketCap") or meta.get("marketCapUsd")
     if isinstance(mc, (int, float)):
         metrics["marketcap"] = float(mc)
 
-    # Live price (info only)
+    # Цена (инфо)
     entry_price = await jup_price_spl_in_sol(mint)
     metrics["price_sol"] = entry_price
 
-    # Вердикт
+    # Итоговый вердикт
     hard_ok = (metrics["age_ok"] is True) and (metrics["honeypot_ok"] is True)
-
     soft_checks = []
     for key_ok in ("sell_tax_ok", "lp_locked_ok", "creator_hold_ok", "holders_ok", "liquidity_ok"):
         val = metrics.get(key_ok)
@@ -336,7 +370,7 @@ async def evaluate_token(mint: str, signature: Optional[str]):
     return passed_all, metrics, meta
 
 
-# ========= MAIN LOOP: LISTEN PUMPFUN (запрошенный блок) =========
+# ========= ОСНОВНОЙ ЦИКЛ (WS + отчёты) =========
 async def listen_pumpfun():
     async def on_open(ws):
         sub = {
@@ -344,7 +378,7 @@ async def listen_pumpfun():
             "params": [{"mentions": [PUMPFUN_PROGRAM_ID]}, {"commitment": "finalized"}]
         }
         await ws.send(json.dumps(sub))
-        print("🛰 Subscribed to Pump.fun logs via Helius")
+        print("🛰 Подписка на Pump.fun логи через Helius оформлена")
 
     async def keepalive(ws, ping_interval=20, ping_timeout=15):
         while True:
@@ -400,33 +434,33 @@ async def listen_pumpfun():
                             sym  = meta.get("symbol") or meta.get("tokenSymbol") or "UNK"
                             name = meta.get("name") or "Unnamed"
 
-                            age_str  = f"{int(m['age_s'])}s" if m["age_s"] is not None else "n/a"
-                            liq_str  = f"{m['liquidity']:.0f} SOL" if m["liquidity"] is not None else "n/a"
-                            hold_str = str(m["holders"]) if m["holders"] is not None else "n/a"
-                            st_str   = f"{m['sell_tax']:.2f}" if m["sell_tax"] is not None else "n/a"
-                            ch_str   = f"{m['creator_hold']:.2f}" if m["creator_hold"] is not None else "n/a"
-                            lp_str   = "YES" if m["lp_locked"] else ("NO" if m["lp_locked"] is not None else "n/a")
-                            sellable_str = "YES" if m["sellable"] else "NO"
-                            mc_str   = f"${m['marketcap']:,.0f}" if m["marketcap"] is not None else "n/a"
+                            age_str  = f"{int(m['age_s'])}с" if m["age_s"] is not None else "н/д"
+                            liq_str  = f"{m['liquidity']:.0f} SOL" if m["liquidity"] is not None else "н/д"
+                            hold_str = str(m["holders"]) if m["holders"] is not None else "н/д"
+                            st_str   = f"{m['sell_tax']:.2f}" if m["sell_tax"] is not None else "н/д"
+                            ch_str   = f"{m['creator_hold']:.2f}" if m["creator_hold"] is not None else "н/д"
+                            lp_str   = "ДА" if m["lp_locked"] else ("НЕТ" if m["lp_locked"] is not None else "н/д")
+                            sellable_str = "ДА" if m["sellable"] else "НЕТ"
+                            mc_str   = f"${m['marketcap']:,.0f}" if m["marketcap"] is not None else "н/д"
 
                             report = (
-                                f"<code>TOKEN:</code> <b>{name}</b> ({sym}) | <code>{_short(mint)}</code>\n"
-                                f"<code>Age:</code> {age_str} {_ok(m['age_ok'])}\n"
-                                f"<code>Honeypot:</code> {m['honeypot_reason']} {_ok(m['honeypot_ok'])}\n"
-                                f"<code>Liquidity:</code> {liq_str} "
+                                f"<code>ТОКЕН:</code> <b>{name}</b> ({sym}) | <code>{_short(mint)}</code>\n"
+                                f"<code>Возраст:</code> {age_str} {_ok(m['age_ok'])}\n"
+                                f"<code>Продажа (honeypot):</code> {m['honeypot_reason']} {_ok(m['honeypot_ok'])}\n"
+                                f"<code>Ликвидность:</code> {liq_str} "
                                     f"{_ok(m['liquidity_ok']) if m['liquidity'] is not None else _na()}\n"
-                                f"<code>MarketCap:</code> {mc_str} {_na()}\n"
-                                f"<code>Holders:</code> {hold_str} "
+                                f"<code>Рын. кап.:</code> {mc_str} {_na()}\n"
+                                f"<code>Холдеров:</code> {hold_str} "
                                     f"{_ok(m['holders_ok']) if m['holders'] is not None else _na()}\n"
-                                f"<code>SellTax:</code> {st_str} "
+                                f"<code>Налог продажи:</code> {st_str} "
                                     f"{_ok(m['sell_tax_ok']) if m['sell_tax'] is not None else _na()}\n"
-                                f"<code>CreatorShare:</code> {ch_str} "
+                                f"<code>Доля создателя:</code> {ch_str} "
                                     f"{_ok(m['creator_hold_ok']) if m['creator_hold'] is not None else _na()}\n"
-                                f"<code>LP Locked:</code> {lp_str} "
+                                f"<code>LP заблокирована:</code> {lp_str} "
                                     f"{_ok(m['lp_locked_ok']) if m['lp_locked'] is not None else _na()}\n"
-                                f"<code>Sellable:</code> {sellable_str} {_ok(m['sellable'])}\n"
+                                f"<code>Продаваемость:</code> {sellable_str} {_ok(m['sellable'])}\n"
                                 f"<code>---</code>\n"
-                                f"{'✅' if passed else '⚠️'} <b>Recommendation:</b> {'BUY' if passed else 'RISK'}"
+                                f"{'✅' if passed else '⚠️'} <b>Рекомендация:</b> {'BUY' if passed else 'RISK'}"
                             )
 
                             print(report)
@@ -437,16 +471,16 @@ async def listen_pumpfun():
                                 deal.buy({"mint": mint, "symbol": sym}, entry_price, report)
 
                         except Exception as e:
-                            print(f"[handler] error for {mint}: {e}")
+                            print(f"[handler] ошибка для {mint}: {e}")
 
                 ka.cancel()
 
         except websockets.ConnectionClosedError as e:
-            print(f"⚠ WS closed: {e.code} {e.reason}")
+            print(f"⚠ WS закрыт: {e.code} {e.reason}")
         except Exception as e:
-            print(f"⚠ WS error: {e}")
+            print(f"⚠ WS ошибка: {e}")
 
         sleep_s = min(60, backoff) + random.uniform(0, 0.5 * backoff)
-        print(f"↪ reconnecting in {sleep_s:.1f}s…")
+        print(f"↪ переподключение через {sleep_s:.1f}с…")
         await asyncio.sleep(sleep_s)
         backoff = min(60, backoff * 2)
