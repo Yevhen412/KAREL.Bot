@@ -1,11 +1,11 @@
 import os
 import time
 import json
-import base64
 import asyncio
 import websockets
-import aiohttp
-from typing import Optional, Tuple
+import httpx
+import random
+from typing import Optional, Tuple, List
 from telegram import send_message
 import deal
 
@@ -30,33 +30,43 @@ assert HELIUS_API_KEY, "HELIUS_API_KEY is required"
 assert PUMPFUN_PROGRAM_ID, "PUMPFUN_PROGRAM_ID is required"
 assert USER_PUBKEY, "USER_PUBKEY is required (для Jupiter simulate)"
 
+# ========= HTTP helper (httpx + retries) =========
+async def _http_json(url: str, method: str = "GET", payload=None, timeout: float = 8.0, attempts: int = 4):
+    last_err = None
+    for i in range(attempts):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                if method == "GET":
+                    r = await client.get(url)
+                else:
+                    r = await client.post(url, json=payload)
+                if r.status_code == 200:
+                    return r.json()
+                last_err = f"http {r.status_code}"
+        except Exception as e:
+            last_err = str(e)
+        # экспоненциальный бэк-офф с джиттером
+        await asyncio.sleep(min(0.5 * (2 ** i), 5) + random.uniform(0, 0.3))
+    print(f"[HTTP] fail {method} {url}: {last_err}")
+    return None
 
-# ========= HELPERS =========
-async def _http_json(url: str, method: str = "GET", payload=None, timeout: int = 20):
-    async with aiohttp.ClientSession() as s:
-        if method == "GET":
-            async with s.get(url, timeout=timeout) as r:
-                return await r.json()
-        else:
-            async with s.post(url, json=payload, timeout=timeout) as r:
-                return await r.json()
-
+# ========= Helius helpers =========
 async def helius_get_tx(signature: str) -> dict:
     payload = {
-        "jsonrpc":"2.0","id":1,"method":"getTransaction",
-        "params":[signature, {"encoding":"jsonParsed","commitment":"confirmed"}]
+        "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+        "params": [signature, {"encoding": "jsonParsed", "commitment": "confirmed"}]
     }
     return await _http_json(RPC_URL, method="POST", payload=payload)
 
 async def get_block_time(signature: str) -> Optional[float]:
     j = await helius_get_tx(signature)
-    bt = (j.get("result") or {}).get("blockTime")
+    bt = (j.get("result") or {}).get("blockTime") if j else None
     return float(bt) if bt is not None else None
 
 async def get_account_info_jsonparsed(pubkey: str) -> dict:
     payload = {
-        "jsonrpc":"2.0","id":1,"method":"getAccountInfo",
-        "params":[pubkey, {"encoding":"jsonParsed","commitment":"confirmed"}]
+        "jsonrpc": "2.0", "id": 1, "method": "getAccountInfo",
+        "params": [pubkey, {"encoding": "jsonParsed", "commitment": "confirmed"}]
     }
     j = await _http_json(RPC_URL, method="POST", payload=payload)
     return (j.get("result") or {}).get("value", {}) or {}
@@ -71,27 +81,25 @@ async def get_token_holders_count(mint: str) -> Optional[int]:
     # best-effort, может отсутствовать
     url = f"https://api.helius.xyz/v0/tokens/holders?api-key={HELIUS_API_KEY}&mint={mint}&page=1&limit=1"
     j = await _http_json(url)
-    # Helius может возвращать total или придётся читать size другого вызова — учитываем оба варианта
     if isinstance(j, dict) and "total" in j:
         return int(j["total"])
     if isinstance(j, list):
-        # если вернулся массив адресов, но limit=1 — тогда не узнаем total
         return None
     return None
 
-def extract_mints_from_tx_json(tx_json: dict) -> list[str]:
+def extract_mints_from_tx_json(tx_json: dict) -> List[str]:
     """Парсим jsonParsed транзу: ищем initializeMint/mintTo → собираем адреса mint."""
-    res = []
-    tx = tx_json.get("result")
+    res: List[str] = []
+    tx = tx_json.get("result") if tx_json else None
     if not tx:
         return res
 
-    # inner
+    # inner instructions
     meta = tx.get("meta") or {}
     for group in (meta.get("innerInstructions") or []):
         for ix in group.get("instructions", []):
             parsed = ix.get("parsed") or {}
-            if isinstance(parsed, dict) and parsed.get("type") in ("initializeMint","initializeMint2","mintTo"):
+            if isinstance(parsed, dict) and parsed.get("type") in ("initializeMint", "initializeMint2", "mintTo"):
                 mint = (parsed.get("info") or {}).get("mint")
                 if mint:
                     res.append(mint)
@@ -100,16 +108,16 @@ def extract_mints_from_tx_json(tx_json: dict) -> list[str]:
     msg = tx.get("transaction", {}).get("message", {}) or {}
     for ix in (msg.get("instructions") or []):
         parsed = ix.get("parsed") or {}
-        if isinstance(parsed, dict) and parsed.get("type") in ("initializeMint","initializeMint2","mintTo"):
+        if isinstance(parsed, dict) and parsed.get("type") in ("initializeMint", "initializeMint2", "mintTo"):
             mint = (parsed.get("info") or {}).get("mint")
             if mint:
                 res.append(mint)
 
-    return list(dict.fromkeys(res))  # уникально, порядок сохранён
-
+    # уникально, порядок сохранён
+    return list(dict.fromkeys(res))
 
 # ========= HONEYPOT CHECK =========
-def _mint_risk_flags(parsed_acc: dict) -> list[str]:
+def _mint_risk_flags(parsed_acc: dict) -> list:
     """Быстрые флаги: mintAuthority/freezeAuthority, Token-2022 transferHook/transferFee>10%."""
     risks = []
     info = (parsed_acc.get("data") or {}).get("parsed", {}).get("info", {}) or {}
@@ -128,13 +136,18 @@ def _mint_risk_flags(parsed_acc: dict) -> list[str]:
     return risks
 
 async def jup_quote(mint_in: str, amount_in: int) -> Optional[dict]:
-    url = f"{JUP_BASE}/quote?inputMint={mint_in}&outputMint={WSOL_MINT}&amount={amount_in}&slippageBps=100"
-    q = await _http_json(url)
+    url = (
+        f"{JUP_BASE}/quote"
+        f"?inputMint={mint_in}"
+        f"&outputMint={WSOL_MINT}"
+        f"&amount={amount_in}"
+        f"&slippageBps=100"
+        f"&swapMode=ExactIn"
+    )
+    q = await _http_json(url, timeout=8.0, attempts=4)
     if not q:
         return None
-    if "outAmount" in q:
-        return q
-    if "routes" in q and q["routes"]:
+    if isinstance(q, dict) and (q.get("outAmount") or (q.get("routes") or [])):
         return q
     return None
 
@@ -152,18 +165,18 @@ async def jup_swap_instructions(quote: dict) -> Optional[dict]:
     return await _http_json(url, method="POST", payload=payload)
 
 async def helius_simulate(ixs_resp: dict) -> Tuple[bool, str]:
-    msg_b64 = ixs_resp.get("swapTransactionMessage")
+    msg_b64 = ixs_resp.get("swapTransactionMessage") if ixs_resp else None
     if not msg_b64:
         return (False, "no message from Jupiter")
     payload = {
-        "jsonrpc":"2.0","id":1,"method":"simulateTransaction",
-        "params":[
+        "jsonrpc": "2.0", "id": 1, "method": "simulateTransaction",
+        "params": [
             msg_b64,
-            {"encoding":"base64","sigVerify":False,"replaceRecentBlockhash":True,"commitment":"processed"}
+            {"encoding": "base64", "sigVerify": False, "replaceRecentBlockhash": True, "commitment": "processed"}
         ]
     }
     j = await _http_json(RPC_URL, method="POST", payload=payload)
-    err = (j.get("result") or {}).get("err")
+    err = (j.get("result") or {}).get("err") if j else "no result"
     ok = err is None
     reason = "ok" if ok else f"simulate err: {err}"
     return (ok, reason)
@@ -178,7 +191,7 @@ async def honeypot_check(mint: str) -> Tuple[bool, str]:
     info = (parsed.get("data") or {}).get("parsed", {}).get("info", {}) or {}
     try:
         supply = int(info.get("supply", "0"))
-        dec    = int(info.get("decimals", 9))
+        dec = int(info.get("decimals", 9))
     except Exception:
         supply, dec = 0, 9
 
@@ -194,7 +207,6 @@ async def honeypot_check(mint: str) -> Tuple[bool, str]:
         return (False, "no swap-instructions")
     ok, reason = await helius_simulate(ixs)
     return (ok, reason)
-
 
 # ========= PRICE (Jupiter live) =========
 async def jup_price_spl_in_sol(mint: str, amount_in_atoms: Optional[int] = None) -> Optional[float]:
@@ -221,7 +233,6 @@ async def jup_price_spl_in_sol(mint: str, amount_in_atoms: Optional[int] = None)
     sol_for_amount = out_amount / 1_000_000_000
     price_sol_per_token = sol_for_amount / amount_in_atoms
     return price_sol_per_token
-
 
 # ========= FILTERS PIPELINE & REPORT =========
 async def evaluate_token(mint: str, signature: Optional[str]) -> tuple[bool, str, dict, Optional[float]]:
@@ -316,24 +327,50 @@ async def evaluate_token(mint: str, signature: Optional[str]) -> tuple[bool, str
 
     return (ok_all, "\n".join(lines), meta, entry_price)
 
-
 # ========= MAIN LOOP (WS + parsing) =========
 async def listen_pumpfun():
-    backoff = 2
+    async def on_open(ws):
+        sub = {
+            "jsonrpc": "2.0", "id": 1, "method": "logsSubscribe",
+            "params": [{"mentions": [PUMPFUN_PROGRAM_ID]}, {"commitment": "finalized"}]
+        }
+        await ws.send(json.dumps(sub))
+        print("🛰 Subscribed to Pump.fun logs via Helius")
+
+    async def keepalive(ws, ping_interval=20, ping_timeout=15):
+        # активный пинг поверх встроенного — повышает устойчивость на Railway
+        while True:
+            await asyncio.sleep(ping_interval * 0.9)
+            try:
+                pong_waiter = await ws.ping()
+                await asyncio.wait_for(pong_waiter, timeout=ping_timeout)
+            except Exception:
+                try:
+                    await ws.close(code=1011, reason="keepalive failure")
+                except Exception:
+                    pass
+                return
+
+    backoff = 1
     while True:
         try:
-            async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
-                sub = {
-                    "jsonrpc":"2.0","id":1,"method":"logsSubscribe",
-                    "params":[{"mentions":[PUMPFUN_PROGRAM_ID]}, {"commitment":"finalized"}]
-                }
-                await ws.send(json.dumps(sub))
-                print("🔌 Subscribed to Pump.fun logs via Helius")
-                backoff = 2
+            async with websockets.connect(
+                WS_URL,
+                ping_interval=20,
+                ping_timeout=20,
+                close_timeout=5,
+                max_queue=1000
+            ) as ws:
+                await on_open(ws)
+                backoff = 1
 
-                while True:
-                    raw = await ws.recv()
-                    msg = json.loads(raw)
+                ka = asyncio.create_task(keepalive(ws))
+
+                async for raw in ws:
+                    try:
+                        msg = json.loads(raw)
+                    except Exception:
+                        continue
 
                     if msg.get("method") != "logsNotification":
                         continue
@@ -342,35 +379,47 @@ async def listen_pumpfun():
                     if not signature:
                         continue
 
-                    # подтягиваем транзу и тащим mint'ы
                     tx_json = await helius_get_tx(signature)
+                    if not tx_json:
+                        continue
                     mints = extract_mints_from_tx_json(tx_json)
                     if not mints:
                         continue
 
                     for mint in mints:
-                        passed, report, meta, entry_price = await evaluate_token(mint, signature)
-                        sym = meta.get("symbol") or meta.get("tokenSymbol") or "UNK"
-                        name = meta.get("name") or "Unnamed"
+                        try:
+                            passed, report, meta, entry_price = await evaluate_token(mint, signature)
+                            sym = meta.get("symbol") or meta.get("tokenSymbol") or "UNK"
+                            name = meta.get("name") or "Unnamed"
 
-                        header = (
-                            f"<b>📢 Token candidate</b>\n"
-                            f"Name: <b>{name}</b>\n"
-                            f"Symbol: <b>{sym}</b>\n"
-                            f"Mint: <code>{mint}</code>\n"
-                            f"Sig: <code>{signature}</code>\n\n"
-                            f"{report}\n\n"
-                            f"<b>Verdict:</b> {'✅ BUY' if passed else '⚠️ RISK'}"
-                        )
+                            header = (
+                                f"<b>📢 Token candidate</b>\n"
+                                f"Name: <b>{name}</b>\n"
+                                f"Symbol: <b>{sym}</b>\n"
+                                f"Mint: <code>{mint}</code>\n"
+                                f"Sig: <code>{signature}</code>\n\n"
+                                f"{report}\n\n"
+                                f"<b>Verdict:</b> {'✅ BUY' if passed else '⚠️ RISK'}"
+                            )
 
-                        print(header)
-                        send_message(header)
+                            print(header)
+                            send_message(header)
 
-                        if passed and entry_price is not None:
-                            # тестовая «покупка» (лог/телега), реальных свопов пока нет
-                            deal.buy({"mint": mint, "symbol": sym}, entry_price, header)
+                            if passed and entry_price is not None:
+                                # тестовая сделка/логирование
+                                deal.buy({"mint": mint, "symbol": sym}, entry_price, header)
+                        except Exception as e:
+                            print(f"[handler] error for {mint}: {e}")
 
+                ka.cancel()
+
+        except websockets.ConnectionClosedError as e:
+            print(f"⚠ WS closed: {e.code} {e.reason}")
         except Exception as e:
-            print(f"⚠️ WS error: {e} — reconnecting in {backoff}s…")
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            print(f"⚠ WS error: {e}")
+
+        # экспоненциальный бэк-офф с джиттером
+        sleep_s = min(60, backoff) + random.uniform(0, 0.5 * backoff)
+        print(f"↪ reconnecting in {sleep_s:.1f}s…")
+        await asyncio.sleep(sleep_s)
+        backoff = min(60, backoff * 2)
