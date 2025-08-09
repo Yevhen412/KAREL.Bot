@@ -26,10 +26,13 @@ MIN_HOLDERS         = int(os.getenv("MIN_HOLDERS", "10"))
 # Тестовый режим: только отчёты, без сделок
 TEST_MODE = os.getenv("TEST_MODE", "1") == "1"
 
-# Диагностика API и повторные попытки, когда данных нет
+# Диагностика и повторные попытки при пустых данных
 DEBUG_API          = os.getenv("DEBUG_API", "1") == "1"
 RETRY_DELAY_SEC    = float(os.getenv("RETRY_DELAY_SEC", "3"))
 MAX_META_ATTEMPTS  = int(os.getenv("MAX_META_ATTEMPTS", "2"))
+
+# Фоллбек-ключ для Birdeye (опционально)
+BIRDEYE_API_KEY    = os.getenv("BIRDEYE_API_KEY")
 
 WS_URL  = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
@@ -267,10 +270,41 @@ async def jup_price_spl_in_sol(mint: str, amount_in_atoms: Optional[int] = None)
     return price_sol_per_token
 
 
-# ========= ОЦЕНКА ТОКЕНА (с ретраями и логами) =========
+# ========= Birdeye fallback =========
+async def birdeye_token_overview(mint: str) -> dict | None:
+    """
+    Фоллбек: пытаемся получить ликвидность и число холдеров.
+    Требует BIRDEYE_API_KEY. Возвращает dict с ключами liquidity, holders.
+    """
+    if not BIRDEYE_API_KEY:
+        return None
+    url = f"https://public-api.birdeye.so/defi/token_overview?address={mint}"
+    headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+            r = await client.get(url)
+            if r.status_code != 200:
+                _dbg("birdeye:http", f"status {r.status_code}")
+                return None
+            data = r.json() or {}
+    except Exception as e:
+        _dbg("birdeye:exc", str(e))
+        return None
+
+    result = data.get("data") or {}
+    out = {}
+    if isinstance(result.get("liquidity"), (int, float)):
+        out["liquidity"] = float(result["liquidity"])  # индикатор наличия пула
+    if isinstance(result.get("holders"), (int, float)):
+        out["holders"] = int(result["holders"])
+    return out if out else None
+
+
+# ========= ОЦЕНКА ТОКЕНА =========
 async def evaluate_token(mint: str, signature: Optional[str]):
     """
     Возвращает: passed_all(bool), metrics(dict), meta(dict)
+    С ретраями, причинами 'н/д' и фоллбеком Birdeye.
     """
     metrics = {
         "age_s": None, "age_ok": False,
@@ -278,8 +312,8 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         "sell_tax": None, "sell_tax_ok": True,
         "lp_locked": None, "lp_locked_ok": True,
         "creator_hold": None, "creator_hold_ok": True,
-        "holders": None, "holders_ok": True,
-        "liquidity": None, "liquidity_ok": True,
+        "holders": None, "holders_ok": True, "holders_reason": "",
+        "liquidity": None, "liquidity_ok": True, "liquidity_reason": "",
         "marketcap": None,
         "sellable": None,
         "price_sol": None,
@@ -303,25 +337,36 @@ async def evaluate_token(mint: str, signature: Optional[str]):
     metrics["honeypot_reason"] = "OK" if hp_ok else hp_reason
     metrics["sellable"] = hp_ok
 
-    # Метаданные и холдеры — с ретраями, если пусто
+    # Метаданные/холдеры — умные ретраи
     meta = {}
     holders_count = None
     for attempt in range(1, MAX_META_ATTEMPTS + 1):
         meta = await get_token_metadata(mint) or {}
         holders_count = await get_token_holders_count(mint)
-
-        has_any_meta = any(
-            k in meta for k in ("liquidity", "sellTax", "creatorHold", "lpLocked", "marketCap", "marketCapUsd")
-        )
+        has_any_meta = any(k in meta for k in ("liquidity","sellTax","creatorHold","lpLocked","marketCap","marketCapUsd"))
         if has_any_meta or holders_count is not None:
             break
         _dbg("meta_retry", {"attempt": attempt, "reason": "пустые метаданные/холдеры"})
         await asyncio.sleep(RETRY_DELAY_SEC)
 
-    if not meta:
-        _dbg("meta_final_empty", {"mint": mint})
+    # причины н/д
+    if ("liquidity" not in meta) or (meta.get("liquidity") is None):
+        metrics["liquidity_reason"] = "нет пула/ликвидности (Helius 404/пусто)"
     if holders_count is None:
-        _dbg("holders_final_empty", {"mint": mint})
+        metrics["holders_reason"] = "ещё нет записей (Helius 404/пусто)"
+
+    # Фоллбек Birdeye
+    if (metrics["liquidity"] is None or metrics["holders"] is None):
+        b = await birdeye_token_overview(mint)
+        if b:
+            if metrics["liquidity"] is None and isinstance(b.get("liquidity"), (int, float)):
+                metrics["liquidity"] = float(b["liquidity"])
+                metrics["liquidity_ok"] = metrics["liquidity"] >= MIN_LIQ_SOL
+                metrics["liquidity_reason"] = "по данным Birdeye"
+            if metrics["holders"] is None and isinstance(b.get("holders"), int):
+                metrics["holders"] = int(b["holders"])
+                metrics["holders_ok"] = metrics["holders"] >= MIN_HOLDERS
+                metrics["holders_reason"] = "по данным Birdeye"
 
     # Разбор метаданных
     sell_tax = meta.get("sellTax")
@@ -339,14 +384,16 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         metrics["creator_hold"] = float(creator_hold)
         metrics["creator_hold_ok"] = float(creator_hold) <= MAX_CREATOR_HOLD
 
-    if holders_count is not None:
+    if holders_count is not None and metrics["holders"] is None:
         metrics["holders"] = int(holders_count)
-        metrics["holders_ok"] = holders_count >= MIN_HOLDERS
+        metrics["holders_ok"] = metrics["holders"] >= MIN_HOLDERS
+        metrics["holders_reason"] = ""
 
     liq = meta.get("liquidity")
-    if isinstance(liq, (int, float)):
+    if isinstance(liq, (int, float)) and metrics["liquidity"] is None:
         metrics["liquidity"] = float(liq)
         metrics["liquidity_ok"] = float(liq) >= MIN_LIQ_SOL
+        metrics["liquidity_reason"] = ""
 
     mc = meta.get("marketCap") or meta.get("marketCapUsd")
     if isinstance(mc, (int, float)):
@@ -360,10 +407,9 @@ async def evaluate_token(mint: str, signature: Optional[str]):
     hard_ok = (metrics["age_ok"] is True) and (metrics["honeypot_ok"] is True)
     soft_checks = []
     for key_ok in ("sell_tax_ok", "lp_locked_ok", "creator_hold_ok", "holders_ok", "liquidity_ok"):
-        val = metrics.get(key_ok)
-        available = metrics.get(key_ok.replace("_ok", "")) is not None
+        available = metrics.get(key_ok.replace("_ok","")) is not None
         if available:
-            soft_checks.append(bool(val))
+            soft_checks.append(bool(metrics.get(key_ok)))
     soft_ok = all(soft_checks) if soft_checks else True
 
     passed_all = bool(hard_ok and soft_ok)
@@ -435,8 +481,16 @@ async def listen_pumpfun():
                             name = meta.get("name") or "Unnamed"
 
                             age_str  = f"{int(m['age_s'])}с" if m["age_s"] is not None else "н/д"
-                            liq_str  = f"{m['liquidity']:.0f} SOL" if m["liquidity"] is not None else "н/д"
-                            hold_str = str(m["holders"]) if m["holders"] is not None else "н/д"
+                            liq_str  = (
+                                f"{m['liquidity']:.0f} SOL"
+                                if m["liquidity"] is not None
+                                else f"н/д{(' — ' + m['liquidity_reason']) if m.get('liquidity_reason') else ''}"
+                            )
+                            hold_str = (
+                                str(m["holders"])
+                                if m["holders"] is not None
+                                else f"н/д{(' — ' + m['holders_reason']) if m.get('holders_reason') else ''}"
+                            )
                             st_str   = f"{m['sell_tax']:.2f}" if m["sell_tax"] is not None else "н/д"
                             ch_str   = f"{m['creator_hold']:.2f}" if m["creator_hold"] is not None else "н/д"
                             lp_str   = "ДА" if m["lp_locked"] else ("НЕТ" if m["lp_locked"] is not None else "н/д")
@@ -456,31 +510,4 @@ async def listen_pumpfun():
                                     f"{_ok(m['sell_tax_ok']) if m['sell_tax'] is not None else _na()}\n"
                                 f"<code>Доля создателя:</code> {ch_str} "
                                     f"{_ok(m['creator_hold_ok']) if m['creator_hold'] is not None else _na()}\n"
-                                f"<code>LP заблокирована:</code> {lp_str} "
-                                    f"{_ok(m['lp_locked_ok']) if m['lp_locked'] is not None else _na()}\n"
-                                f"<code>Продаваемость:</code> {sellable_str} {_ok(m['sellable'])}\n"
-                                f"<code>---</code>\n"
-                                f"{'✅' if passed else '⚠️'} <b>Рекомендация:</b> {'BUY' if passed else 'RISK'}"
-                            )
-
-                            print(report)
-                            send_message(report)
-
-                            if passed and not TEST_MODE:
-                                entry_price = m["price_sol"] or 0.0
-                                deal.buy({"mint": mint, "symbol": sym}, entry_price, report)
-
-                        except Exception as e:
-                            print(f"[handler] ошибка для {mint}: {e}")
-
-                ka.cancel()
-
-        except websockets.ConnectionClosedError as e:
-            print(f"⚠ WS закрыт: {e.code} {e.reason}")
-        except Exception as e:
-            print(f"⚠ WS ошибка: {e}")
-
-        sleep_s = min(60, backoff) + random.uniform(0, 0.5 * backoff)
-        print(f"↪ переподключение через {sleep_s:.1f}с…")
-        await asyncio.sleep(sleep_s)
-        backoff = min(60, backoff * 2)
+                   
