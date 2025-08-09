@@ -511,4 +511,32 @@ async def listen_pumpfun():
                                 f"<code>Налог продажи:</code> {st_str} "
                                     f"{_ok(m['sell_tax_ok']) if m['sell_tax'] is not None else _na()}\n"
                                 f"<code>Доля создателя:</code> {ch_str} "
-                                    f"{_
+                                  f"{_ok(m['creator_hold_ok']) if m['creator_hold'] is not None else _na()}\n"
+                                f"<code>LP заблокирована:</code> {lp_str} "
+                                    f"{_ok(m['lp_locked_ok']) if m['lp_locked'] is not None else _na()}\n"
+                                f"<code>Продаваемость:</code> {sellable_str} {_ok(m['sellable'])}\n"
+                                f"<code>---</code>\n"
+                                f"{'✅' if passed else '⚠️'} <b>Рекомендация:</b> {'BUY' if passed else 'RISK'}"
+                            )
+
+                            print(report)
+                            send_message(report)
+
+                            if passed and not TEST_MODE:
+                                entry_price = m["price_sol"] or 0.0
+                                deal.buy({"mint": mint, "symbol": sym}, entry_price, report)
+
+                        except Exception as e:
+                            print(f"[handler] ошибка для {mint}: {e}")
+
+                ka.cancel()
+
+        except websockets.ConnectionClosedError as e:
+            print(f"⚠ WS закрыт: {e.code} {e.reason}")
+        except Exception as e:
+            print(f"⚠ WS ошибка: {e}")
+
+        sleep_s = min(60, backoff) + random.uniform(0, 0.5 * backoff)
+        print(f"↪ переподключение через {sleep_s:.1f}с…")
+        await asyncio.sleep(sleep_s)
+        backoff = min(60, backoff * 2)  
