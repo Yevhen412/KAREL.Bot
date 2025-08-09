@@ -23,16 +23,16 @@ MAX_CREATOR_HOLD    = float(os.getenv("MAX_CREATOR_HOLD", "0.20"))
 MIN_LIQ_SOL         = float(os.getenv("MIN_LIQ_SOL", "2"))
 MIN_HOLDERS         = int(os.getenv("MIN_HOLDERS", "10"))
 
+# Порог для фоллбека Dexscreener (ликвидность в USD)
+MIN_LIQ_USD         = float(os.getenv("MIN_LIQ_USD", "5000"))
+
 # Тестовый режим: только отчёты, без сделок
-TEST_MODE = os.getenv("TEST_MODE", "1") == "1"
+TEST_MODE           = os.getenv("TEST_MODE", "1") == "1"
 
 # Диагностика и повторные попытки при пустых данных
-DEBUG_API          = os.getenv("DEBUG_API", "1") == "1"
-RETRY_DELAY_SEC    = float(os.getenv("RETRY_DELAY_SEC", "3"))
-MAX_META_ATTEMPTS  = int(os.getenv("MAX_META_ATTEMPTS", "2"))
-
-# Фоллбек-ключ для Birdeye (опционально)
-BIRDEYE_API_KEY    = os.getenv("BIRDEYE_API_KEY")
+DEBUG_API           = os.getenv("DEBUG_API", "1") == "1"
+RETRY_DELAY_SEC     = float(os.getenv("RETRY_DELAY_SEC", "3"))
+MAX_META_ATTEMPTS   = int(os.getenv("MAX_META_ATTEMPTS", "2"))
 
 WS_URL  = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
@@ -64,11 +64,11 @@ def _dbg(label: str, payload):
 
 
 # ========= HTTP (httpx + ретраи) =========
-async def _http_json(url: str, method: str = "GET", payload=None, timeout: float = 8.0, attempts: int = 4):
+async def _http_json(url: str, method: str = "GET", payload=None, timeout: float = 8.0, attempts: int = 4, headers=None):
     last_err = None
     for i in range(attempts):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
                 if method == "GET":
                     r = await client.get(url)
                 else:
@@ -270,41 +270,38 @@ async def jup_price_spl_in_sol(mint: str, amount_in_atoms: Optional[int] = None)
     return price_sol_per_token
 
 
-# ========= Birdeye fallback =========
-async def birdeye_token_overview(mint: str) -> dict | None:
+# ========= Dexscreener fallback (без ключей) =========
+async def dexs_pairs_for_token(mint: str) -> dict | None:
     """
-    Фоллбек: пытаемся получить ликвидность и число холдеров.
-    Требует BIRDEYE_API_KEY. Возвращает dict с ключами liquidity, holders.
+    Возвращает информацию по парам токена из DexScreener.
+    Нужен для того, чтобы понять: есть ли пул и оценить ликвидность (USD).
     """
-    if not BIRDEYE_API_KEY:
-        return None
-    url = f"https://public-api.birdeye.so/defi/token_overview?address={mint}"
-    headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json"}
+    url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
     try:
-        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             r = await client.get(url)
             if r.status_code != 200:
-                _dbg("birdeye:http", f"status {r.status_code}")
+                _dbg("dexs:http", f"status {r.status_code}")
                 return None
             data = r.json() or {}
     except Exception as e:
-        _dbg("birdeye:exc", str(e))
+        _dbg("dexs:exc", str(e))
         return None
 
-    result = data.get("data") or {}
-    out = {}
-    if isinstance(result.get("liquidity"), (int, float)):
-        out["liquidity"] = float(result["liquidity"])  # индикатор наличия пула
-    if isinstance(result.get("holders"), (int, float)):
-        out["holders"] = int(result["holders"])
-    return out if out else None
+    pairs = (data.get("pairs") or [])
+    if not pairs:
+        return None
+
+    best = max(pairs, key=lambda p: (p.get("liquidity", {}).get("usd") or 0))
+    liq_usd = (best.get("liquidity") or {}).get("usd")
+    return {"has_pool": True, "liquidity_usd": float(liq_usd) if isinstance(liq_usd, (int, float)) else None}
 
 
 # ========= ОЦЕНКА ТОКЕНА =========
 async def evaluate_token(mint: str, signature: Optional[str]):
     """
     Возвращает: passed_all(bool), metrics(dict), meta(dict)
-    С ретраями, причинами 'н/д' и фоллбеком Birdeye.
+    С ретраями, причинами 'н/д' и фоллбеком Dexscreener по ликвидности.
     """
     metrics = {
         "age_s": None, "age_ok": False,
@@ -355,20 +352,28 @@ async def evaluate_token(mint: str, signature: Optional[str]):
     if holders_count is None:
         metrics["holders_reason"] = "ещё нет записей (Helius 404/пусто)"
 
-    # Фоллбек Birdeye
-    if (metrics["liquidity"] is None or metrics["holders"] is None):
-        b = await birdeye_token_overview(mint)
-        if b:
-            if metrics["liquidity"] is None and isinstance(b.get("liquidity"), (int, float)):
-                metrics["liquidity"] = float(b["liquidity"])
-                metrics["liquidity_ok"] = metrics["liquidity"] >= MIN_LIQ_SOL
-                metrics["liquidity_reason"] = "по данным Birdeye"
-            if metrics["holders"] is None and isinstance(b.get("holders"), int):
-                metrics["holders"] = int(b["holders"])
-                metrics["holders_ok"] = metrics["holders"] >= MIN_HOLDERS
-                metrics["holders_reason"] = "по данным Birdeye"
+    # Liquidity из Helius (если есть)
+    liq = meta.get("liquidity")
+    if isinstance(liq, (int, float)):
+        metrics["liquidity"] = float(liq)
+        metrics["liquidity_ok"] = float(liq) >= MIN_LIQ_SOL
+        metrics["liquidity_reason"] = ""
 
-    # Разбор метаданных
+    # --- Фоллбек на Dexscreener по ликвидности ---
+    if metrics["liquidity"] is None:
+        ds = await dexs_pairs_for_token(mint)
+        if ds and ds.get("has_pool"):
+            liq_usd = ds.get("liquidity_usd")
+            if isinstance(liq_usd, (int, float)):
+                metrics["liquidity"] = liq_usd  # в USD
+                metrics["liquidity_ok"] = liq_usd >= MIN_LIQ_USD
+                metrics["liquidity_reason"] = "по данным Dexscreener (USD)"
+            else:
+                metrics["liquidity"] = 0.0
+                metrics["liquidity_ok"] = True
+                metrics["liquidity_reason"] = "есть пул (Dexscreener)"
+
+    # Остальные метрики из meta
     sell_tax = meta.get("sellTax")
     if isinstance(sell_tax, (int, float)):
         metrics["sell_tax"] = float(sell_tax)
@@ -384,16 +389,10 @@ async def evaluate_token(mint: str, signature: Optional[str]):
         metrics["creator_hold"] = float(creator_hold)
         metrics["creator_hold_ok"] = float(creator_hold) <= MAX_CREATOR_HOLD
 
-    if holders_count is not None and metrics["holders"] is None:
+    if holders_count is not None:
         metrics["holders"] = int(holders_count)
         metrics["holders_ok"] = metrics["holders"] >= MIN_HOLDERS
         metrics["holders_reason"] = ""
-
-    liq = meta.get("liquidity")
-    if isinstance(liq, (int, float)) and metrics["liquidity"] is None:
-        metrics["liquidity"] = float(liq)
-        metrics["liquidity_ok"] = float(liq) >= MIN_LIQ_SOL
-        metrics["liquidity_reason"] = ""
 
     mc = meta.get("marketCap") or meta.get("marketCapUsd")
     if isinstance(mc, (int, float)):
@@ -481,11 +480,14 @@ async def listen_pumpfun():
                             name = meta.get("name") or "Unnamed"
 
                             age_str  = f"{int(m['age_s'])}с" if m["age_s"] is not None else "н/д"
-                            liq_str  = (
-                                f"{m['liquidity']:.0f} SOL"
-                                if m["liquidity"] is not None
-                                else f"н/д{(' — ' + m['liquidity_reason']) if m.get('liquidity_reason') else ''}"
-                            )
+                            # вывод ликвидности: SOL (если Helius) или USD (если Dexscreener)
+                            if m["liquidity"] is not None and m.get("liquidity_reason","").endswith("(USD)"):
+                                liq_val = f"{m['liquidity']:.0f} USD"
+                            elif m["liquidity"] is not None:
+                                liq_val = f"{m['liquidity']:.0f} SOL"
+                            else:
+                                liq_val = f"н/д{(' — ' + m['liquidity_reason']) if m.get('liquidity_reason') else ''}"
+
                             hold_str = (
                                 str(m["holders"])
                                 if m["holders"] is not None
@@ -501,7 +503,7 @@ async def listen_pumpfun():
                                 f"<code>ТОКЕН:</code> <b>{name}</b> ({sym}) | <code>{_short(mint)}</code>\n"
                                 f"<code>Возраст:</code> {age_str} {_ok(m['age_ok'])}\n"
                                 f"<code>Продажа (honeypot):</code> {m['honeypot_reason']} {_ok(m['honeypot_ok'])}\n"
-                                f"<code>Ликвидность:</code> {liq_str} "
+                                f"<code>Ликвидность:</code> {liq_val} "
                                     f"{_ok(m['liquidity_ok']) if m['liquidity'] is not None else _na()}\n"
                                 f"<code>Рын. кап.:</code> {mc_str} {_na()}\n"
                                 f"<code>Холдеров:</code> {hold_str} "
@@ -509,5 +511,4 @@ async def listen_pumpfun():
                                 f"<code>Налог продажи:</code> {st_str} "
                                     f"{_ok(m['sell_tax_ok']) if m['sell_tax'] is not None else _na()}\n"
                                 f"<code>Доля создателя:</code> {ch_str} "
-                                    f"{_ok(m['creator_hold_ok']) if m['creator_hold'] is not None else _na()}\n"
-                   
+                                    f"{_
