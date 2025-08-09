@@ -1,8 +1,8 @@
 import os
 import requests
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_message(text: str):
     """Отправка сообщения в Telegram (HTML). Без падений при ошибке."""
