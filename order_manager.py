@@ -39,6 +39,7 @@ class OrderManager:
 
         # если нет активной лимитки — ставим
         if self.sim.open_order is None:
+            log(f"PLACE entry limit: side={self.side} price={price}")
             self.sim.place_entry_limit(self.side, price)
             self.current_price = price
             self.last_place_ts = now_ms()
@@ -46,6 +47,7 @@ class OrderManager:
 
         # если лимитка есть, но цена сменилась заметно — переставим
         if abs(price - (self.current_price or 0)) >= TICK_SIZE:
+            log(f"REPLACE entry limit: side={self.side} old_price={self.current_price} new_price={price}")
             self.sim.cancel_entry()
             self.sim.place_entry_limit(self.side, price)
             self.current_price = price
@@ -54,6 +56,7 @@ class OrderManager:
 
         # если висим дольше срока — переставим для приоритета в очереди
         if self.last_place_ts and now_ms() - self.last_place_ts > ORDER_LIFETIME * 1000:
+            log(f"REFRESH entry limit after timeout: side={self.side} price={price}")
             self.sim.cancel_entry()
             self.sim.place_entry_limit(self.side, price)
             self.current_price = price
