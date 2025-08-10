@@ -1,6 +1,9 @@
-"""
-import asyncio
-from screen import listen_pumpfun
+from websocket_client import BybitWebSocket
+import time
 
 if __name__ == "__main__":
-    asyncio.run(listen_pumpfun())
+    ws_client = BybitWebSocket()
+    ws_client.start()
+
+    while True:
+        time.sleep(1)
