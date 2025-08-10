@@ -21,8 +21,6 @@ API_SECRET = "your_api_secret"
 
 #===== TELEGRAM
 ENABLE_TELEGRAM = True            # включить/выключить отправку в TG
-TELEGRAM_TOKEN = "xxx:yyyy"       # токен бота
-TELEGRAM_CHAT_ID = "123456789"    # твой chat_id
 TG_RATE_LIMIT_SEC = 1.5           # защита от спама (секунд между сообщениями)
 
 
