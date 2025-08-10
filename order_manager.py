@@ -2,7 +2,7 @@
 from typing import Optional
 from config import TICK_SIZE, ORDER_LIFETIME
 from utils import now_ms
-from logger import log
+from telegram import log
 
 class OrderManager:
     """
