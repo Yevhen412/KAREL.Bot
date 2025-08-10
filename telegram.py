@@ -6,7 +6,7 @@ import requests
 
 from config import (
     ENABLE_TELEGRAM,
-    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_TOKEN,
     TELEGRAM_CHAT_ID,
     TG_RATE_LIMIT_SEC,
 )
