@@ -1,7 +1,7 @@
 python-telegram-bot==13.15
 urllib3==1.26.16
 requests==2.32.3
-websockets==12.0
+websocket==12.0
 aiohttp 
 
 
