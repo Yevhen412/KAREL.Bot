@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Optional
 from config import TP_USD, SL_USD, TRADE_SIZE, MAKER_FEE, TAKER_FEE, TICK_SIZE
-from logger import log
+from telegram import log
 
 @dataclass
 class Position:
