@@ -1,16 +1,26 @@
-# simulator.py
-from dataclasses import dataclass
-from typing import Optional
-from config import TP_USD, SL_USD, TRADE_SIZE, MAKER_FEE, TAKER_FEE, TICK_SIZE
+from config import TICK_SIZE, TP_TICKS, SL_TICKS, MAKER_FEE, TAKER_FEE, TRADE_SIZE, TIME_STOP_SEC
+from utils import now_ms
 from telegram import log
 
-@dataclass
-class Position:
-    side: str              # "long" or "short"
-    entry: float
-    qty_btc: float
-    tp: float
-    sl: float
+class Position(...):
+    opened_ms: int
+
+def _fill_entry(self, price: float, side: str):
+    ...
+    tp = price + TP_TICKS * TICK_SIZE if side == "long" else price - TP_TICKS * TICK_SIZE
+    sl = price - SL_TICKS * TICK_SIZE if side == "long" else price + SL_TICKS * TICK_SIZE
+    self.position = Position(side=side, entry=price, qty_btc=qty, tp=tp, sl=sl, opened_ms=now_ms())
+    ...
+
+def on_orderbook(self, best_bid: float, best_ask: float):
+    ...
+    if self.position:
+        pos = self.position
+        # тайм-стоп
+        if now_ms() - pos.opened_ms >= TIME_STOP_SEC * 1000:
+            exec_px = best_bid if pos.side == "long" else best_ask
+            self._fill_sl(exec_px)  # быстрая фиксация по рынку
+            return
 
 class Simulator:
     """
