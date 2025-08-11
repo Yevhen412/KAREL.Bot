@@ -1,6 +1,6 @@
 # order_manager.py
 from typing import Optional
-from config import TICK_SIZE, ORDER_LIFETIME
+from config import TICK_SIZE, 
 from utils import now_ms
 from telegram import log
 
