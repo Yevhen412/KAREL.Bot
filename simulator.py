@@ -58,7 +58,7 @@ class Simulator:
             sum_net = self.hourly_stats["sum_net"]
             win_rate = (wins / trades * 100) if trades > 0 else 0
             avg_trade = (sum_net / trades) if trades > 0 else 0
-            net_percent = (avg_trade / (ORDER_SIZE_USD)) * 100 if trades > 0 else 0
+            net_percent = (avg_trade / (TRADE_SIZE)) * 100 if trades > 0 else 0
 
             log(
                 f"📊 Hourly Report:\n"
