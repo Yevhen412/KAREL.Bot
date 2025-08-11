@@ -32,7 +32,7 @@ class Simulator:
         return notional * fee_rate
 
     def place_entry_limit(self, side: str, price: float):
-        qty_btc = ORDER_SIZE_USD / price
+        qty_btc = TRADE_SIZE / price
         self.open_order = {"side": side, "price": price, "qty": qty_btc}
         log(f"PLACE entry limit: side={side} price={price:.1f}")
     
