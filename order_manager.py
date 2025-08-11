@@ -1,6 +1,6 @@
 # order_manager.py
 from typing import Optional
-from config import TICK_SIZE, 
+from config import TICK_SIZE, TRADE_SIZE
 from utils import now_ms
 from telegram import log
 
@@ -56,7 +56,7 @@ class OrderManager:
             return
 
         # 3️⃣ Лимитка висит дольше ORDER_LIFETIME — переставляем для приоритета
-        if self.last_place_ts and now_ms() - self.last_place_ts > ORDER_LIFETIME * 1000:
+        if self.last_place_ts and now_ms() - self.last_place_ts > TIME_STOP_SEC * 1000:
             self.sim.cancel_entry()
             self.sim.place_entry_limit(self.side, price)
             self.current_price = price
