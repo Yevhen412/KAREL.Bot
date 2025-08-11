@@ -1,7 +1,7 @@
 # simulator.py
 import time
 from typing import Optional
-from config import MAKER_FEE, TAKER_FEE, TP_TICKS, SL_TICKS, TICK_SIZE, ORDER_SIZE_USD
+from config import MAKER_FEE, TAKER_FEE, TP_TICKS, SL_TICKS, TICK_SIZE, TRADE_SIZE
 from utils import now_ms
 from telegram import log
 
