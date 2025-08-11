@@ -2,7 +2,7 @@ from config import TICK_SIZE, TP_TICKS, SL_TICKS, MAKER_FEE, TAKER_FEE, TRADE_SI
 from utils import now_ms
 from telegram import log
 
-class Position(...):
+class Position:
     opened_ms: int
 
 def _fill_entry(self, price: float, side: str):
