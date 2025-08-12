@@ -1,48 +1,58 @@
-from typing import Optional
-from config import TICK_SIZE, ORDER_LIFETIME, MAKER_FEE
-from utils import now_ms
+# order_manager.py
+from config import TICK_SIZE
 from telegram import log
 
 class OrderManager:
-    """
-    Маркет-мейкер:
-      - Ставит лимитку на покупку по bid
-      - Ставит лимитку на продажу по ask
-      - При исполнении одной стороны, закрывает её встречной сделкой
-    """
     def __init__(self, simulator):
         self.sim = simulator
-        self.last_place_ts: Optional[int] = None
-        self.current_bid_price: Optional[float] = None
-        self.current_ask_price: Optional[float] = None
+        self.last_bid = None
+        self.last_ask = None
+        self._boot_logged = False  # <- диагностика
 
     def on_orderbook(self, best_bid: float, best_ask: float):
-        spread = round(best_ask - best_bid, 10)
-
-        # Не лезем, если спред меньше 2 тиков (невыгодно)
-        if spread < 2 * TICK_SIZE:
+        if best_bid is None or best_ask is None:
+            if not self._boot_logged:
+                log("⚠️ best_bid/best_ask отсутствуют")
             return
 
-        # --- Лимитка на покупку ---
+        spread_ticks = (best_ask - best_bid) / TICK_SIZE
+        if spread_ticks < 2:
+            # необязательно логировать каждую итерацию, просто иногда
+            return
+
+        # ---- BID ----
         bid_price = best_bid
-        if self.sim.open_buy_order is None:
+        placed_bid = False
+        if getattr(self.sim, "open_buy_order", None) is None:
             self.sim.place_entry_limit("long", bid_price)
-            self.current_bid_price = bid_price
+            self.last_bid = bid_price
+            placed_bid = True
             log(f"📥 Bid лимитка {bid_price}")
-        elif abs(bid_price - (self.current_bid_price or 0)) >= TICK_SIZE:
-            self.sim.cancel_buy()
+        elif abs(bid_price - (self.last_bid or bid_price)) >= TICK_SIZE:
+            if hasattr(self.sim, "cancel_buy"): self.sim.cancel_buy()
             self.sim.place_entry_limit("long", bid_price)
-            self.current_bid_price = bid_price
+            self.last_bid = bid_price
             log(f"♻ Переставили Bid {bid_price}")
 
-        # --- Лимитка на продажу ---
+        # ---- ASK ----
         ask_price = best_ask
-        if self.sim.open_sell_order is None:
+        placed_ask = False
+        if getattr(self.sim, "open_sell_order", None) is None:
             self.sim.place_entry_limit("short", ask_price)
-            self.current_ask_price = ask_price
+            self.last_ask = ask_price
+            placed_ask = True
             log(f"📤 Ask лимитка {ask_price}")
-        elif abs(ask_price - (self.current_ask_price or 0)) >= TICK_SIZE:
-            self.sim.cancel_sell()
+        elif abs(ask_price - (self.last_ask or ask_price)) >= TICK_SIZE:
+            if hasattr(self.sim, "cancel_sell"): self.sim.cancel_sell()
             self.sim.place_entry_limit("short", ask_price)
-            self.current_ask_price = ask_price
+            self.last_ask = ask_price
             log(f"♻ Переставили Ask {ask_price}")
+
+        # ---- единый стартовый лог (чтобы не съелось лимитером TG)
+        if (placed_bid or placed_ask) and not self._boot_logged:
+            log(
+                f"🧪 placed_bid={placed_bid} open_buy={self.sim.open_buy_order is not None} | "
+                f"placed_ask={placed_ask} open_sell={self.sim.open_sell_order is not None} | "
+                f"spread_ticks={spread_ticks:.0f}"
+            )
+            self._boot_logged = True
