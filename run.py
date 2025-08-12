@@ -1,4 +1,4 @@
-# run.py
+"""
 import time
 from websocket_client import BybitWebSocket
 from simulator import Simulator
