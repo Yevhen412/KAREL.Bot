@@ -24,6 +24,6 @@ API_SECRET = "your_api_secret"
 
 #===== TELEGRAM
 ENABLE_TELEGRAM = True            # включить/выключить отправку в TG
-TG_RATE_LIMIT_SEC = 1.5           # защита от спама (секунд между сообщениями)
+TG_RATE_LIMIT_SEC = 0.2          # защита от спама (секунд между сообщениями)
 
 
