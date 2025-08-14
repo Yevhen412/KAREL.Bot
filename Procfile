@@ -1,1 +1,1 @@
-worker: python Deal.py
+worker: python atr_oil.py
